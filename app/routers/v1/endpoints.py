@@ -2,8 +2,9 @@ import logging
 import os
 import zipfile
 import io
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Security
 from fastapi.responses import FileResponse
+from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas.schemas import LogsRequest, PassbookRequest, EnvelopedResponse, TokenRequest, TokenResponse, WalletBalanceRequest, DaywiseReportRequest
@@ -11,6 +12,9 @@ from app.services.services import DigipayService
 from app.utils.auth import create_jwt_token
 
 logger = logging.getLogger("digipay.endpoints")
+
+client_id_header = APIKeyHeader(name="X-Client-Id", auto_error=False, description="Internal Client ID (e.g. WALLET_SERVICE)")
+bypass_secret_header = APIKeyHeader(name="X-Bypass-Secret", auto_error=False, description="Internal Client Bypass Secret")
 
 router = APIRouter()
 
@@ -31,7 +35,12 @@ async def generate_auth_token(req: TokenRequest):
     return TokenResponse(access_token=access_token)
 
 @router.post("/txn-logs", response_model=EnvelopedResponse)
-async def get_transaction_logs(req: LogsRequest, db: AsyncSession = Depends(get_db)):
+async def get_transaction_logs(
+    req: LogsRequest, 
+    db: AsyncSession = Depends(get_db),
+    client_id: str = Security(client_id_header),
+    bypass_secret: str = Security(bypass_secret_header)
+):
     try:
         base64_data = await DigipayService.get_txn_logs(
             db=db,
@@ -65,7 +74,12 @@ async def get_transaction_logs(req: LogsRequest, db: AsyncSession = Depends(get_
         )
 
 @router.post("/passbook", response_model=EnvelopedResponse)
-async def get_passbook(req: PassbookRequest, db: AsyncSession = Depends(get_db)):
+async def get_passbook(
+    req: PassbookRequest, 
+    db: AsyncSession = Depends(get_db),
+    client_id: str = Security(client_id_header),
+    bypass_secret: str = Security(bypass_secret_header)
+):
     try:
         base64_data = await DigipayService.get_passbook(
             db=db,
@@ -91,7 +105,12 @@ async def get_passbook(req: PassbookRequest, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/get-wallet-balance")
-async def get_wallet_balance(req: WalletBalanceRequest, db: AsyncSession = Depends(get_db)):
+async def get_wallet_balance(
+    req: WalletBalanceRequest, 
+    db: AsyncSession = Depends(get_db),
+    client_id: str = Security(client_id_header),
+    bypass_secret: str = Security(bypass_secret_header)
+):
     """
     Retrieves wallet balances for a list of CSC IDs.
     Returns a dictionary mapping cscId to balance.
@@ -115,7 +134,11 @@ async def get_wallet_balance(req: WalletBalanceRequest, db: AsyncSession = Depen
 
 
 @router.post("/daywise_report")
-async def monthly_daywise_report(req: DaywiseReportRequest):
+async def monthly_daywise_report(
+    req: DaywiseReportRequest,
+    client_id: str = Security(client_id_header),
+    bypass_secret: str = Security(bypass_secret_header)
+):
     """
     Serves consolidated monthly zip report or extracts and serves daywise zip archive.
     """
