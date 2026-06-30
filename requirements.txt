@@ -9,3 +9,5 @@ pydantic-settings>=2.1.0
 pytest>=8.0.0
 pytest-cov>=4.1.0
 httpx>=0.26.0
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
