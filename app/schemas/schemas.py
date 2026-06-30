@@ -100,3 +100,12 @@ class TokenRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class WalletBalanceRequest(BaseModel):
+    csc_ids: List[str]
+
+
+class DaywiseReportRequest(BaseModel):
+    year_month: str = Field(..., description="Format: 'YYYY MonthName', e.g. '2026 June'")
+    day: Optional[str] = Field(None, description="Format: 'DD', e.g. '19'")

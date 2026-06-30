@@ -390,3 +390,50 @@ class DigipayService:
         }
         
         return encode_payload_to_base64(payload)
+
+    @staticmethod
+    async def get_wallet_balances(db: AsyncSession, csc_ids: List[str]) -> Dict[str, str]:
+        balances = {}
+        for csc_id in csc_ids:
+            csc_id_clean = str(csc_id).strip()
+            if not csc_id_clean:
+                continue
+            
+            # 1. Query from partitioned ledger
+            ledger_table = get_ledger_table_name(csc_id_clean)
+            balance = None
+            try:
+                query = f"""
+                    SELECT walletBalance 
+                    FROM {ledger_table} 
+                    WHERE cscId = :csc_id 
+                    ORDER BY lastSno DESC 
+                    LIMIT 1
+                """
+                res = await db.execute(text(query), {"csc_id": csc_id_clean})
+                row = res.fetchone()
+                if row and row[0] is not None:
+                    balance = str(row[0])
+            except Exception as e:
+                logger.warning(f"Error querying ledger table {ledger_table} for balance: {e}")
+                
+            # 2. Fallback to sum of transaction amounts
+            if balance is None:
+                try:
+                    query = """
+                        SELECT COALESCE(SUM(amount), 0) AS wallet_balance 
+                        FROM transactions
+                        WHERE status IN ('SUCCESS', 'INITIATED') AND user_id = :csc_id
+                    """
+                    res = await db.execute(text(query), {"csc_id": csc_id_clean})
+                    row = res.fetchone()
+                    if row and row[0] is not None:
+                        balance = str(row[0])
+                except Exception as e:
+                    logger.error(f"Error querying transactions sum for balance: {e}")
+                    balance = "0.00"
+                    
+            balances[csc_id_clean] = balance if balance is not None else "0.00"
+            
+        return balances
+

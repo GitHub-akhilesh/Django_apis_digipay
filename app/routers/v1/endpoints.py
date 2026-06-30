@@ -1,8 +1,12 @@
 import logging
+import os
+import zipfile
+import io
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.schemas.schemas import LogsRequest, PassbookRequest, EnvelopedResponse, TokenRequest, TokenResponse
+from app.schemas.schemas import LogsRequest, PassbookRequest, EnvelopedResponse, TokenRequest, TokenResponse, WalletBalanceRequest, DaywiseReportRequest
 from app.services.services import DigipayService
 from app.utils.auth import create_jwt_token
 
@@ -83,4 +87,89 @@ async def get_passbook(req: PassbookRequest, db: AsyncSession = Depends(get_db))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+
+@router.post("/get-wallet-balance")
+async def get_wallet_balance(req: WalletBalanceRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Retrieves wallet balances for a list of CSC IDs.
+    Returns a dictionary mapping cscId to balance.
+    """
+    try:
+        if not req.csc_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Missing csc_ids"
+            )
+        balances = await DigipayService.get_wallet_balances(db, req.csc_ids)
+        return balances
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching wallet balance: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error"
+        )
+
+
+@router.post("/daywise_report")
+async def monthly_daywise_report(req: DaywiseReportRequest):
+    """
+    Serves consolidated monthly zip report or extracts and serves daywise zip archive.
+    """
+    try:
+        parts = req.year_month.split()
+        if len(parts) != 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Format must be 'YYYY MonthName', e.g. '2026 June'"
+            )
+        year, month = parts[0], parts[1]
+        
+        # Check standard report directories
+        base_dir = "reports"
+        if not os.path.exists(os.path.join(base_dir, year)):
+            if os.path.exists(os.path.join("/home/akhilesh/reports", year)):
+                base_dir = "/home/akhilesh/reports"
+            elif os.path.exists(os.path.join("/home/akhilesh/digipay_api/reports", year)):
+                base_dir = "/home/akhilesh/digipay_api/reports"
+                
+        month_zip_path = os.path.join(base_dir, year, f"{month}.zip")
+        if not os.path.exists(month_zip_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found for this month."
+            )
+            
+        if not req.day:
+            return FileResponse(month_zip_path, media_type="application/zip", filename=f"{month}.zip")
+            
+        with zipfile.ZipFile(month_zip_path, 'r') as month_zip:
+            day_zip_name = f"{req.day}.zip"
+            if day_zip_name not in month_zip.namelist():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found for this day."
+                )
+            
+            day_zip_data = month_zip.read(day_zip_name)
+            buffer = io.BytesIO(day_zip_data)
+            
+            from fastapi.responses import StreamingResponse
+            buffer.seek(0)
+            return StreamingResponse(
+                buffer, 
+                media_type="application/zip",
+                headers={"Content-Disposition": f"attachment; filename={day_zip_name}"}
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching daywise report: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Exception occurred, please try again later."
         )

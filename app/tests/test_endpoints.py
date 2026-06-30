@@ -222,3 +222,69 @@ async def test_unauthorized_flow():
             "type": "AEPS_CASH_WITHDRAWAL"
         })
         assert res.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_wallet_balance_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        headers = {
+            "X-Client-Id": "WALLET_SERVICE",
+            "X-Bypass-Secret": "NPCl_INT3RNAL_Bypass_Secr3t_2026!"
+        }
+        res = await ac.post("/api/v1/get-wallet-balance", json={
+            "csc_ids": ["500100100014", "999999999999"]
+        }, headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert "500100100014" in data
+        assert float(data["500100100014"]) == 3821.42  # matches seed data walletBalance
+        assert float(data["999999999999"]) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_daywise_report_endpoint():
+    import os
+    import zipfile
+    import io
+    
+    # Create temp directory structure
+    os.makedirs("reports/2026", exist_ok=True)
+    month_zip = "reports/2026/June.zip"
+    
+    # Create a dummy zip file
+    with zipfile.ZipFile(month_zip, 'w') as zf:
+        # Create a day zip inside the month zip
+        day_buffer = io.BytesIO()
+        with zipfile.ZipFile(day_buffer, 'w') as dzf:
+            dzf.writestr("report.csv", "sno,clientId,amount\n1,CSC-DGP,100.0\n")
+        zf.writestr("19.zip", day_buffer.getvalue())
+
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            headers = {
+                "X-Client-Id": "LOG_SERVICE",
+                "X-Bypass-Secret": "NPCl_INT3RNAL_Bypass_Secr3t_2026!"
+            }
+            # 1. Test downloading monthly zip
+            res_month = await ac.post("/api/v1/daywise_report", json={
+                "year_month": "2026 June"
+            }, headers=headers)
+            assert res_month.status_code == 200
+            assert res_month.headers["content-type"] == "application/zip"
+            
+            # 2. Test downloading daywise zip
+            res_day = await ac.post("/api/v1/daywise_report", json={
+                "year_month": "2026 June",
+                "day": "19"
+            }, headers=headers)
+            assert res_day.status_code == 200
+            assert res_day.headers["content-type"] == "application/zip"
+            
+    finally:
+        # Clean up
+        if os.path.exists(month_zip):
+            os.remove(month_zip)
+        if os.path.exists("reports/2026"):
+            os.rmdir("reports/2026")
+        if os.path.exists("reports"):
+            os.rmdir("reports")
