@@ -124,7 +124,7 @@ class DigipayService:
             SELECT COUNT(*) 
             FROM transactions t
             WHERE t.user_id = :csc_id 
-              AND t.txn_date BETWEEN :from_date AND :to_date
+              AND t.date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
               {search_clause}
         """
@@ -141,7 +141,7 @@ class DigipayService:
             FROM transactions t
             LEFT JOIN {ledger_table} l ON t.txn_id = l.merchantTxn
             WHERE t.user_id = :csc_id 
-              AND t.txn_date BETWEEN :from_date AND :to_date
+              AND t.date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
               {search_clause}
             ORDER BY t.date DESC, t.id DESC
