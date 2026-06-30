@@ -2,9 +2,9 @@ import logging
 import os
 import zipfile
 import io
-from fastapi import APIRouter, Depends, HTTPException, status, Security
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from fastapi.responses import FileResponse
-from fastapi.security import APIKeyHeader
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas.schemas import LogsRequest, PassbookRequest, EnvelopedResponse, TokenRequest, TokenResponse, WalletBalanceRequest, DaywiseReportRequest
@@ -13,8 +13,6 @@ from app.utils.auth import create_jwt_token
 
 logger = logging.getLogger("digipay.endpoints")
 
-client_id_header = APIKeyHeader(name="X-Client-Id", auto_error=False, description="Internal Client ID (e.g. WALLET_SERVICE)")
-bypass_secret_header = APIKeyHeader(name="X-Bypass-Secret", auto_error=False, description="Internal Client Bypass Secret")
 
 router = APIRouter()
 
@@ -38,8 +36,8 @@ async def generate_auth_token(req: TokenRequest):
 async def get_transaction_logs(
     req: LogsRequest, 
     db: AsyncSession = Depends(get_db),
-    client_id: str = Security(client_id_header),
-    bypass_secret: str = Security(bypass_secret_header)
+    x_client_id: Optional[str] = Header(None, alias="X-Client-Id", description="Internal Client ID (e.g. WALLET_SERVICE)"),
+    x_bypass_secret: Optional[str] = Header(None, alias="X-Bypass-Secret", description="Internal Client Bypass Secret")
 ):
     try:
         base64_data = await DigipayService.get_txn_logs(
@@ -77,8 +75,8 @@ async def get_transaction_logs(
 async def get_passbook(
     req: PassbookRequest, 
     db: AsyncSession = Depends(get_db),
-    client_id: str = Security(client_id_header),
-    bypass_secret: str = Security(bypass_secret_header)
+    x_client_id: Optional[str] = Header(None, alias="X-Client-Id", description="Internal Client ID (e.g. WALLET_SERVICE)"),
+    x_bypass_secret: Optional[str] = Header(None, alias="X-Bypass-Secret", description="Internal Client Bypass Secret")
 ):
     try:
         base64_data = await DigipayService.get_passbook(
@@ -108,8 +106,8 @@ async def get_passbook(
 async def get_wallet_balance(
     req: WalletBalanceRequest, 
     db: AsyncSession = Depends(get_db),
-    client_id: str = Security(client_id_header),
-    bypass_secret: str = Security(bypass_secret_header)
+    x_client_id: Optional[str] = Header(None, alias="X-Client-Id", description="Internal Client ID (e.g. WALLET_SERVICE)"),
+    x_bypass_secret: Optional[str] = Header(None, alias="X-Bypass-Secret", description="Internal Client Bypass Secret")
 ):
     """
     Retrieves wallet balances for a list of CSC IDs.
@@ -136,8 +134,8 @@ async def get_wallet_balance(
 @router.post("/daywise_report")
 async def monthly_daywise_report(
     req: DaywiseReportRequest,
-    client_id: str = Security(client_id_header),
-    bypass_secret: str = Security(bypass_secret_header)
+    x_client_id: Optional[str] = Header(None, alias="X-Client-Id", description="Internal Client ID (e.g. WALLET_SERVICE)"),
+    x_bypass_secret: Optional[str] = Header(None, alias="X-Bypass-Secret", description="Internal Client Bypass Secret")
 ):
     """
     Serves consolidated monthly zip report or extracts and serves daywise zip archive.
