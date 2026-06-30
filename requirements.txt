@@ -9,3 +9,5 @@ pydantic-settings>=2.1.0
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
 async-timeout>=4.0.3
+exceptiongroup>=1.0.2
+tomli>=2.0.0
