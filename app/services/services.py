@@ -134,12 +134,18 @@ class DigipayService:
         
         # 2. Query Page records
         # Use LEFT JOIN to join transactions with partitioned ledger table
+        # We dynamically select join syntax: SQLite tests don't support CONVERT, but production MySQL needs it to join different collations/charsets efficiently.
+        from app.config import settings
+        join_clause = "CONVERT(t.txn_id USING latin1) = l.merchantTxn"
+        if settings.ENV == "TEST":
+            join_clause = "t.txn_id = l.merchantTxn"
+            
         fetch_sql = f"""
             SELECT 
                 t.id, t.user_id, t.txn_id, t.amount, t.type, t.status, t.date, t.category, t.mobile, t.masked_aadhaar, t.rrn,
                 l.walletBalance, l.bank_iin, l.stateCode, l.districtCode
             FROM transactions t
-            LEFT JOIN {ledger_table} l ON t.txn_id = l.merchantTxn
+            LEFT JOIN {ledger_table} l ON {join_clause}
             WHERE t.user_id = :csc_id 
               AND t.date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
