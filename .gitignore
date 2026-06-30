@@ -1,0 +1,23 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Database fallback
+*.db
+*.sqlite
+
+# IDE and System Logs
+.vscode/
+.idea/
+.system_generated/
+*.log
