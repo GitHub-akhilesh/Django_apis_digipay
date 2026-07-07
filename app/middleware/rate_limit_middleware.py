@@ -12,8 +12,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         
-        # Exclude documentation, assets, health checks, and token endpoints
+        # Exclude OPTIONS requests, documentation, assets, health checks, and token endpoints
         if (
+            request.method == "OPTIONS" or
             path.startswith("/docs") or 
             path.startswith("/redoc") or 
             path.startswith("/openapi.json") or

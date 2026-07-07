@@ -10,6 +10,9 @@ logger = logging.getLogger("digipay.deprecation")
 
 class DeprecationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+            
         path = request.url.path
         rules = settings.API_DEPRECATION_RULES_JSON or {}
         

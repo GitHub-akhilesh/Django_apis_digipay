@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Internal Auth Bypass
     ENABLE_INTERNAL_AUTH_BYPASS: bool = True
     INTERNAL_CLIENTS: str = "WALLET_SERVICE,PASSBOOK_SERVICE,LOG_SERVICE"
-    INTERNAL_BYPASS_SECRET: str = "NPCl_INT3RNAL_Bypass_Secr3t_2026!" # Shared secret to protect bypass from spoofing
+    INTERNAL_BYPASS_SECRET: str = "NPCI_INT3RNAL_Bypass_Secr3t_2026!" # Shared secret to protect bypass from spoofing
 
     model_config = SettingsConfigDict(
         env_file=(".env.local", ".env.prod"),

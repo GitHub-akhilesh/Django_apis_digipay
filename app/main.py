@@ -23,7 +23,20 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# 1. CORS Middleware - closest to the client to intercept preflight OPTIONS requests
+# 1. Correlation Tracking - generates/propagates correlation UUIDs across downstream services
+app.add_middleware(CorrelationIdMiddleware)
+
+# 2. Rate Limiting - sheds loads early based on IP address prior to expensive authentication validation
+app.add_middleware(RateLimitMiddleware)
+
+# 3. Sunsetting & Deprecation Governance - monitors API lifespan rules and handles blockages/warnings
+app.add_middleware(DeprecationMiddleware)
+
+# 4. Authentication & Multi-Tenant Routing - verifies claims and populates active tenant context variables
+app.add_middleware(AuthMiddleware)
+
+# 5. CORS Middleware - closest to the client to intercept preflight OPTIONS requests
+# Registered last to ensure it runs first (outermost middleware) to handle OPTIONS requests.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,18 +44,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 2. Correlation Tracking - generates/propagates correlation UUIDs across downstream services
-app.add_middleware(CorrelationIdMiddleware)
-
-# 3. Rate Limiting - sheds loads early based on IP address prior to expensive authentication validation
-app.add_middleware(RateLimitMiddleware)
-
-# 4. Sunsetting & Deprecation Governance - monitors API lifespan rules and handles blockages/warnings
-app.add_middleware(DeprecationMiddleware)
-
-# 5. Authentication & Multi-Tenant Routing - verifies claims and populates active tenant context variables
-app.add_middleware(AuthMiddleware)
 
 # Register v1 router
 app.include_router(v1_router, prefix="/api/v1")

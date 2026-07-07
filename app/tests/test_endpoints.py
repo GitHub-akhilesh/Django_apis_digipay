@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.config import settings
 settings.ENV = "TEST"
 settings.ENABLE_INTERNAL_AUTH_BYPASS = True
-settings.INTERNAL_BYPASS_SECRET = "NPCl_INT3RNAL_Bypass_Secr3t_2026!"
+settings.INTERNAL_BYPASS_SECRET = "NPCI_INT3RNAL_Bypass_Secr3t_2026!"
 settings.INTERNAL_CLIENTS = "WALLET_SERVICE,PASSBOOK_SERVICE,LOG_SERVICE"
 
 from app.main import app
@@ -184,7 +184,7 @@ async def test_internal_client_bypass_flow():
         # Request passbook with bypass headers
         headers = {
             "X-Client-Id": "PASSBOOK_SERVICE",
-            "X-Bypass-Secret": "NPCl_INT3RNAL_Bypass_Secr3t_2026!"
+            "X-Bypass-Secret": "NPCI_INT3RNAL_Bypass_Secr3t_2026!"
         }
         
         passbook_res = await ac.post("/api/v1/passbook", json={
@@ -229,7 +229,7 @@ async def test_wallet_balance_endpoint():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         headers = {
             "X-Client-Id": "WALLET_SERVICE",
-            "X-Bypass-Secret": "NPCl_INT3RNAL_Bypass_Secr3t_2026!"
+            "X-Bypass-Secret": "NPCI_INT3RNAL_Bypass_Secr3t_2026!"
         }
         res = await ac.post("/api/v1/get-wallet-balance", json={
             "csc_ids": ["500100100014", "999999999999"]
@@ -263,7 +263,7 @@ async def test_daywise_report_endpoint():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             headers = {
                 "X-Client-Id": "LOG_SERVICE",
-                "X-Bypass-Secret": "NPCl_INT3RNAL_Bypass_Secr3t_2026!"
+                "X-Bypass-Secret": "NPCI_INT3RNAL_Bypass_Secr3t_2026!"
             }
             # 1. Test downloading monthly zip
             res_month = await ac.post("/api/v1/daywise_report", json={
