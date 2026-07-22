@@ -231,6 +231,7 @@ async def test_wallet_balance_endpoint():
             "X-Client-Id": "WALLET_SERVICE",
             "X-Bypass-Secret": "NPCI_INT3RNAL_Bypass_Secr3t_2026!"
         }
+        # 1. Standard POST with csc_ids
         res = await ac.post("/api/v1/get-wallet-balance", json={
             "csc_ids": ["500100100014", "999999999999"]
         }, headers=headers)
@@ -239,6 +240,24 @@ async def test_wallet_balance_endpoint():
         assert "500100100014" in data
         assert float(data["500100100014"]) == 3821.42  # matches seed data walletBalance
         assert float(data["999999999999"]) == 0.0
+
+        # 2. Legacy POST payload key variation (cscId, user_id, merchantId)
+        res_legacy = await ac.post("/api/v1/wallet_balance", json={
+            "cscId": "500100100014"
+        }, headers=headers)
+        assert res_legacy.status_code == 200
+        assert float(res_legacy.json()["500100100014"]) == 3821.42
+
+        res_user_id = await ac.post("/api/v1/user_wallet_balance", json={
+            "user_id": "500100100014"
+        }, headers=headers)
+        assert res_user_id.status_code == 200
+        assert float(res_user_id.json()["500100100014"]) == 3821.42
+
+        # 3. Legacy GET request with query params
+        res_get = await ac.get("/api/v1/get-wallet-balance?cscId=500100100014", headers=headers)
+        assert res_get.status_code == 200
+        assert float(res_get.json()["500100100014"]) == 3821.42
 
 
 @pytest.mark.asyncio

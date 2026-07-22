@@ -46,14 +46,17 @@ def is_internal_bypass(request: Request) -> bool:
     if not settings.ENABLE_INTERNAL_AUTH_BYPASS:
         return False
         
-    client_id = request.headers.get("X-Client-Id")
-    bypass_secret = request.headers.get("X-Bypass-Secret")
+    client_id = (request.headers.get("X-Client-Id") or request.headers.get("x-client-id") or "").strip()
+    bypass_secret = (request.headers.get("X-Bypass-Secret") or request.headers.get("x-bypass-secret") or "").strip()
     
     if not client_id or not bypass_secret:
         return False
         
-    # Check if client_id is in permitted internal clients and secret matches
-    if client_id in settings.internal_clients_set and bypass_secret == settings.INTERNAL_BYPASS_SECRET:
+    # Check if client_id is in permitted internal clients (case-insensitive) and secret matches
+    permitted_clients = {c.strip().upper() for c in settings.internal_clients_set}
+    expected_secret = settings.INTERNAL_BYPASS_SECRET.strip()
+    
+    if client_id.upper() in permitted_clients and bypass_secret == expected_secret:
         return True
         
     return False

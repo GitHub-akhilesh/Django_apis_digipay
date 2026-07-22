@@ -84,14 +84,14 @@ class DigipayService:
     ) -> dict:
         # Determine partition ledger table for cscId to run the join
         ledger_table = get_ledger_table_name(csc_id)
-        
+
         # Format query dates
         from_date = parse_date(from_date_str)
         to_date = parse_date(to_date_str)
-        
+
         # Pagination offsets
         offset = (cp - 1) * rpp
-        
+
         # Determine transaction filter by types
         # Map requested type (e.g. AEPS_CASH_WITHDRAWAL) to DB columns
         type_filter_clause = "1=1"
@@ -105,7 +105,7 @@ class DigipayService:
             type_filter_clause = "t.category = 'DSP_TOPUP' OR t.type = 'DSP Topup'"
         else:
             type_filter_clause = f"(t.category = '{txn_type}' OR t.type = '{txn_type}')"
-            
+
         search_clause = ""
         params = {
             "csc_id": csc_id,
@@ -114,16 +114,16 @@ class DigipayService:
             "limit": rpp,
             "offset": offset
         }
-        
+
         if search_query:
             search_clause = "AND (t.txn_id LIKE :search OR t.rrn LIKE :search OR t.mobile LIKE :search)"
             params["search"] = f"%{search_query}%"
-            
+
         # 1. Query Total Records count
         count_sql = f"""
-            SELECT COUNT(*) 
+            SELECT COUNT(*)
             FROM transactions t
-            WHERE t.user_id = :csc_id 
+            WHERE t.user_id = :csc_id
               AND t.date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
               {search_clause}
@@ -131,7 +131,7 @@ class DigipayService:
         count_res = await db.execute(text(count_sql), params)
         total_records = count_res.scalar() or 0
         total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
-        
+
         # 2. Query Page records
         # Use LEFT JOIN to join transactions with partitioned ledger table
         # We dynamically select join syntax: SQLite tests don't support CONVERT, but production MySQL needs it to join different collations/charsets efficiently.
@@ -139,24 +139,24 @@ class DigipayService:
         join_clause = "CONVERT(t.txn_id USING latin1) = l.merchantTxn"
         if settings.ENV == "TEST":
             join_clause = "t.txn_id = l.merchantTxn"
-            
+
         fetch_sql = f"""
-            SELECT 
+            SELECT
                 t.id, t.user_id, t.txn_id, t.amount, t.type, t.status, t.date, t.category, t.mobile, t.masked_aadhaar, t.rrn,
                 l.walletBalance, l.bank_iin, l.stateCode, l.districtCode
             FROM transactions t
             LEFT JOIN {ledger_table} l ON {join_clause}
-            WHERE t.user_id = :csc_id 
+            WHERE t.user_id = :csc_id
               AND t.date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
               {search_clause}
             ORDER BY t.date DESC, t.id DESC
             LIMIT :limit OFFSET :offset
         """
-        
+
         res = await db.execute(text(fetch_sql), params)
         rows = res.fetchall()
-        
+
         records = []
         for row in rows:
             # Map Row to LogRecord schema
@@ -167,14 +167,14 @@ class DigipayService:
                     state_code = int(row.stateCode)
                 except ValueError:
                     pass
-                    
+
             district_code = 0
             if row.districtCode:
                 try:
                     district_code = int(row.districtCode)
                 except ValueError:
                     pass
-            
+
             # Format date: e.g. "19-06-2026 16:26:05"
             dt_str = ""
             if row.date:
@@ -192,10 +192,10 @@ class DigipayService:
                     dt_str = row.date.strftime("%d-%m-%Y %H:%M:%S")
                 else:
                     dt_str = str(row.date)
-            
+
             # Map result
             result_str = row.status or "FAILURE"
-            
+
             rec = LogRecord(
                 custId=format_masked_aadhaar(row.masked_aadhaar),
                 custMobile=row.mobile or "0000000000",
@@ -218,14 +218,14 @@ class DigipayService:
                 lgrAmt=abs(float(row.amount)) if row.amount is not None else 0.0
             )
             records.append(rec)
-            
+
         payload = {
             "list": [r.model_dump() for r in records],
             "totalPages": total_pages,
             "currentPage": cp,
             "totalRecords": total_records
         }
-        
+
         # Base64 encode the payload
         return encode_payload_to_base64(payload)
 
@@ -241,14 +241,14 @@ class DigipayService:
     ) -> dict:
         # Determine partition ledger table for cscId
         ledger_table = get_ledger_table_name(csc_id)
-        
+
         # Format dates
         from_date = parse_date(from_date_str)
         to_date = parse_date(to_date_str)
-        
+
         # Pagination offsets
         offset = (cp - 1) * rpp
-        
+
         search_clause = ""
         params = {
             "csc_id": csc_id,
@@ -257,29 +257,29 @@ class DigipayService:
             "limit": rpp,
             "offset": offset
         }
-        
+
         if search_query:
             search_clause = """
-                AND (merchantTxn LIKE :search OR cscTxn LIKE :search 
+                AND (merchantTxn LIKE :search OR cscTxn LIKE :search
                      OR isoRrn LIKE :search OR remarks LIKE :search OR customer LIKE :search)
             """
             params["search"] = f"%{search_query}%"
-            
+
         # Load category mappings dynamically
         category_cache = await DigipayService.get_category_mappings(db)
-        
+
         # 1. Query Total count in partition ledger
         count_sql = f"""
-            SELECT COUNT(*) 
+            SELECT COUNT(*)
             FROM {ledger_table}
-            WHERE cscId = :csc_id 
+            WHERE cscId = :csc_id
               AND txnDate BETWEEN :from_date AND :to_date
               {search_clause}
         """
         count_res = await db.execute(text(count_sql), params)
         total_records = count_res.scalar() or 0
         total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
-        
+
         # 2. Query Page records from partition ledger
         fetch_sql = f"""
             SELECT *
@@ -290,33 +290,33 @@ class DigipayService:
             ORDER BY creationDate DESC, sno DESC
             LIMIT :limit OFFSET :offset
         """
-        
+
         res = await db.execute(text(fetch_sql), params)
         rows = res.fetchall()
         cols = res.keys()
-        
+
         records = []
         for row_tuple in rows:
             # Map dynamic row columns cleanly
             row_dict = dict(zip(cols, row_tuple))
-            
+
             sno = row_dict.get("sno", 0)
             csc_txn = row_dict.get("cscTxn") or row_dict.get("reqCode") or ""
             merchant_txn = row_dict.get("merchantTxn") or ""
             wallet_ac = row_dict.get("walletAc") or csc_id
             txn_amount = float(row_dict.get("txnAmount") or 0.0)
-            
+
             # Map commission, gst, tds, intercharge
             vle_comm = float(row_dict.get("vleAmt") or 0.0)
             gst = float(row_dict.get("gstAmt") or 0.0)
             inter_charge = float(row_dict.get("interChange") or 0.0)
             vle_tds = float(row_dict.get("tds") or 0.0)
-            
+
             # Map wallet deduction
             wallet_deduction = float(row_dict.get("walletTxnAmount") or row_dict.get("txnAmount") or 0.0)
             wallet_balance = float(row_dict.get("walletBalance") or 0.0)
             rrn = row_dict.get("isoRrn") or ""
-            
+
             # Lookup category name from mapping cache
             category_id = row_dict.get("categoryId")
             category_name = "UNKNOWN"
@@ -333,14 +333,14 @@ class DigipayService:
                     category_name = "PAYOUT"
                 elif "topup" in remarks_lower:
                     category_name = "DSP_TOPUP"
-            
+
             # Adapt to user's exact response naming
             if category_name == "AEPS_WITHDRAWAL":
                 category_name = "AEPS_CASH_WITHDRAWAL"
-                
+
             txn_type = row_dict.get("txnType") or "Cr"
             txn_date = str(row_dict.get("txnDate") or "")
-            
+
             creation_date = ""
             cr_date = row_dict.get("creationDate")
             if isinstance(cr_date, datetime.datetime):
@@ -357,12 +357,12 @@ class DigipayService:
                         creation_date = cr_date
             elif cr_date:
                 creation_date = str(cr_date)
-                
+
             customer_str = format_masked_aadhaar(row_dict.get("customer"))
             remarks_str = row_dict.get("remarks") or ""
             client_id = row_dict.get("clientId") or "CSC-DGP"
             device_type = row_dict.get("deviceType") or "WEB"
-            
+
             rec = PassbookRecord(
                 sno=sno,
                 cscId=csc_id,
@@ -387,14 +387,14 @@ class DigipayService:
                 deviceType=device_type
             )
             records.append(rec)
-            
+
         payload = {
             "list": [r.model_dump() for r in records],
             "totalPages": total_pages,
             "currentPage": cp,
             "totalRecords": total_records
         }
-        
+
         return encode_payload_to_base64(payload)
 
     @staticmethod
@@ -404,42 +404,42 @@ class DigipayService:
             csc_id_clean = str(csc_id).strip()
             if not csc_id_clean:
                 continue
-            
+
             # 1. Query from partitioned ledger
             ledger_table = get_ledger_table_name(csc_id_clean)
             balance = None
             try:
                 query = f"""
-                    SELECT walletBalance 
-                    FROM {ledger_table} 
-                    WHERE cscId = :csc_id 
-                    ORDER BY lastSno DESC 
+                    SELECT walletBalance
+                    FROM {ledger_table}
+                    WHERE cscId = :csc_id
+                    ORDER BY lastSno DESC
                     LIMIT 1
                 """
                 res = await db.execute(text(query), {"csc_id": csc_id_clean})
                 row = res.fetchone()
-                if row and row[0] is not None:
+                if row and row[0] is not None and float(row[0]) > 0:
                     balance = str(row[0])
             except Exception as e:
                 logger.warning(f"Error querying ledger table {ledger_table} for balance: {e}")
-                
-            # 2. Fallback to sum of transaction amounts
-            if balance is None:
+
+            # 2. Fallback to sum of transaction amounts if balance is None or 0
+            if balance is None or float(balance or 0.0) == 0:
                 try:
                     query = """
-                        SELECT COALESCE(SUM(amount), 0) AS wallet_balance 
+                        SELECT COALESCE(SUM(amount), 0) AS wallet_balance
                         FROM transactions
                         WHERE status IN ('SUCCESS', 'INITIATED') AND user_id = :csc_id
                     """
                     res = await db.execute(text(query), {"csc_id": csc_id_clean})
                     row = res.fetchone()
                     if row and row[0] is not None:
-                        balance = str(row[0])
+                        val = float(row[0])
+                        balance = str(row[0]) if val != 0 else "0.00"
                 except Exception as e:
                     logger.error(f"Error querying transactions sum for balance: {e}")
                     balance = "0.00"
-                    
-            balances[csc_id_clean] = balance if balance is not None else "0.00"
-            
-        return balances
 
+            balances[csc_id_clean] = balance if balance is not None else "0.00"
+
+        return balances

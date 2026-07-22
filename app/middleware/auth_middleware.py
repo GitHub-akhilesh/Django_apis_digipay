@@ -9,26 +9,33 @@ logger = logging.getLogger("digipay.auth")
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+        path = str(request.url.path).lower()
         
-        # Exclude OPTIONS requests, documentation, assets, health checks, and token endpoints
+        # 1. Immediately bypass auth for all SDK files and Demo UI
+        if "sdk" in path or path.startswith("/sdk"):
+            return await call_next(request)
+
+        # 2. Exclude OPTIONS requests, documentation, assets, health checks, chat endpoints, and public endpoints
         if (
             request.method == "OPTIONS" or
-            path.startswith("/docs") or 
-            path.startswith("/redoc") or 
-            path.startswith("/openapi.json") or
-            path.startswith("/static") or
-            path in ["/api/v1/health", "/api/v1/auth/token", "/"]
+            "docs" in path or
+            "redoc" in path or
+            "openapi" in path or
+            "static" in path or
+            "agent" in path or
+            "health" in path or
+            "token" in path or
+            path == "/"
         ):
             return await call_next(request)
             
         # Check internal client auth bypass
         if is_internal_bypass(request):
-            client_id = request.headers.get("X-Client-Id")
+            client_id = (request.headers.get("X-Client-Id") or request.headers.get("x-client-id") or "INTERNAL_CLIENT").strip()
             request.state.user = {"sub": client_id, "role": "internal_client"}
             
             # Use cscId query param or header for tenant ID if available
-            tenant_id = request.headers.get("X-Tenant-Id")
+            tenant_id = (request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id") or "").strip()
             if tenant_id:
                 set_tenant_id(tenant_id)
                 

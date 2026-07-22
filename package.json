@@ -1,0 +1,21 @@
+{
+  "name": "digipay-developer-platform",
+  "version": "2.0.0-beta",
+  "private": true,
+  "description": "DigiPay Developer Platform Monorepo - Core SDK, React Components, and Web Widgets",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test:e2e": "npx playwright test",
+    "storybook": "npm run storybook --workspace=packages/chat-react"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "keywords": ["digipay", "sdk", "developer-platform", "monorepo", "react", "chat"],
+  "author": "DigiPay Platform Engineering",
+  "license": "MIT"
+}

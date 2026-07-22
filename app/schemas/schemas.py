@@ -1,7 +1,7 @@
 import base64
 import json
-from typing import List, Optional, Any
-from pydantic import BaseModel, Field
+from typing import List, Optional, Any, Union
+from pydantic import BaseModel, Field, model_validator
 
 # Request Schemas
 class LogsRequest(BaseModel):
@@ -13,6 +13,20 @@ class LogsRequest(BaseModel):
     cp: int = 1
     type: str
 
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "cscId" not in data and "csc_id" in data:
+                data["cscId"] = data["csc_id"]
+            if "fromDate" not in data and "from_date" in data:
+                data["fromDate"] = data["from_date"]
+            if "toDate" not in data and "to_date" in data:
+                data["toDate"] = data["to_date"]
+            if "type" not in data and "txn_type" in data:
+                data["type"] = data["txn_type"]
+        return data
+
 class PassbookRequest(BaseModel):
     cscId: str
     fromDate: str = Field(..., description="Format: DD-MM-YYYY")
@@ -20,6 +34,18 @@ class PassbookRequest(BaseModel):
     search: str = ""
     rpp: int = 10
     cp: int = 1
+
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "cscId" not in data and "csc_id" in data:
+                data["cscId"] = data["csc_id"]
+            if "fromDate" not in data and "from_date" in data:
+                data["fromDate"] = data["from_date"]
+            if "toDate" not in data and "to_date" in data:
+                data["toDate"] = data["to_date"]
+        return data
 
 # Record Item Schemas (Internal documentation / Swagger visibility)
 class LogRecord(BaseModel):
@@ -105,7 +131,28 @@ class TokenResponse(BaseModel):
 class WalletBalanceRequest(BaseModel):
     csc_ids: List[str]
 
+    @model_validator(mode='before')
+    @classmethod
+    def normalize_csc_ids(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw = (
+                data.get("csc_ids") 
+                or data.get("cscId") 
+                or data.get("csc_id") 
+                or data.get("user_id") 
+                or data.get("userId") 
+                or data.get("merchant_id") 
+                or data.get("merchantId")
+            )
+            if raw is not None:
+                if isinstance(raw, (str, int)):
+                    data["csc_ids"] = [str(raw).strip()]
+                elif isinstance(raw, list):
+                    data["csc_ids"] = [str(x).strip() for x in raw if str(x).strip()]
+        return data
+
 
 class DaywiseReportRequest(BaseModel):
     year_month: str = Field(..., description="Format: 'YYYY MonthName', e.g. '2026 June'")
     day: Optional[str] = Field(None, description="Format: 'DD', e.g. '19'")
+

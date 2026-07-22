@@ -1,0 +1,163 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-platform-config
+  namespace: ai-platform
+data:
+  APP_NAME: "DigiPay AI Platform"
+  ENVIRONMENT: "production"
+  PORT: "8000"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ai-platform-secret
+  namespace: ai-platform
+type: Opaque
+data:
+  JWT_SECRET: "c3VwZXJzZWNyZXRqd3RrZXk=" # base64 placeholder
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-platform-deployment
+  namespace: ai-platform
+  labels:
+    app: ai-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-platform
+  template:
+    metadata:
+      labels:
+        app: ai-platform
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+      - name: ai-platform-container
+        image: digipay/ai-platform:1.0.0-GA
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+        livenessProbe:
+          httpGet:
+            path: /live
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-platform-service
+  namespace: ai-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: ai-platform
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-platform-ingress
+  namespace: ai-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /api/v1
+        pathType: Prefix
+        backend:
+          service:
+            name: ai-platform-service
+            port:
+              number: 8000
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-platform-hpa
+  namespace: ai-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-platform-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-platform-pdb
+  namespace: ai-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-platform
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-platform-net-policy
+  namespace: ai-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: ai-platform
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000

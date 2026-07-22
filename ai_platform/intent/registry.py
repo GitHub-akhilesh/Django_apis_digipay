@@ -1,0 +1,18 @@
+from typing import List
+
+INTENT_REGISTRY: List[str] = [
+    "CHECK_BALANCE",
+    "CHECK_LIMITS",
+    "MERCHANT_PROFILE",
+    "MERCHANT_STATUS",
+    "LEDGER_STATEMENT",
+    "TXN_DETAILS",
+    "TXN_REVERSAL",
+    "PASSBOOK_VIEW",
+    "NOTIFICATION_SEND",
+    "AEPS_BALANCE",
+    "AEPS_WITHDRAWAL",
+    "SUPPORT_TICKET",
+    "FAQ",
+    "GENERAL"
+]

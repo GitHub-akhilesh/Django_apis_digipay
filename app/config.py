@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     INTERNAL_BYPASS_SECRET: str = "NPCI_INT3RNAL_Bypass_Secr3t_2026!" # Shared secret to protect bypass from spoofing
 
     model_config = SettingsConfigDict(
-        env_file=(".env.local", ".env.prod"),
+        env_file=(".env.prod", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

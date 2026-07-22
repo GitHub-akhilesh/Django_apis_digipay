@@ -22,4 +22,6 @@ htmlcov/
 .system_generated/
 *.log
 wheels/
+backups/
+prod_reference_10_1_76_194/
 

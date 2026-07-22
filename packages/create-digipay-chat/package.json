@@ -1,0 +1,23 @@
+{
+  "name": "create-digipay-chat",
+  "version": "2.0.0-RC1",
+  "description": "CLI scaffolder for DigiPay AI Chat SDK integrations (React, Vite, Next.js, HTML)",
+  "main": "bin/cli.js",
+  "bin": {
+    "create-digipay-chat": "bin/cli.js"
+  },
+  "scripts": {
+    "start": "node bin/cli.js"
+  },
+  "keywords": [
+    "digipay",
+    "chat",
+    "sdk",
+    "scaffolder",
+    "cli",
+    "react",
+    "vite"
+  ],
+  "author": "DigiPay Platform Engineering",
+  "license": "MIT"
+}

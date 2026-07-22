@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigiPay Widget Layout Modes Sandbox (Milestone C & D)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #090d16;
+      color: #f1f5f9;
+      padding: 30px;
+    }
+    h1 { margin-bottom: 8px; color: #38bdf8; }
+    p { color: #94a3b8; margin-bottom: 24px; }
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 20px;
+    }
+    .card h3 { margin-bottom: 12px; font-size: 16px; color: #f8fafc; }
+  </style>
+
+  <!-- Load SDK and Multi-Mode Widget -->
+  <script src="../../sdk/digipay-chat-sdk.js"></script>
+  <script src="../../sdk/digipay-chat-widget.js"></script>
+</head>
+<body>
+  <h1>DigiPay Widget Layout Modes Sandbox</h1>
+  <p>Demonstrating Floating, Inline, and Sidebar modes supported by <code>&lt;digipay-chat mode="..."&gt;</code>.</p>
+
+  <div class="layout-grid">
+    <!-- Inline Widget Card -->
+    <div class="card">
+      <h3>Inline Widget Mode (<code>mode="inline"</code>)</h3>
+      <digipay-chat csc-id="500100100014" mode="inline" base-url="http://127.0.0.1:8000"></digipay-chat>
+    </div>
+
+    <!-- Instructions Card -->
+    <div class="card">
+      <h3>Floating & Sidebar Modes</h3>
+      <p>1. <strong>Floating Mode</strong>: Look at the bottom-right corner of your browser screen.</p>
+      <p>2. <strong>Sidebar Mode</strong>: Integrated into drawer navigations for admin dashboards.</p>
+    </div>
+  </div>
+
+  <!-- Floating Chat Widget -->
+  <digipay-chat csc-id="500100100014" mode="floating" base-url="http://127.0.0.1:8000"></digipay-chat>
+</body>
+</html>

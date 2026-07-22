@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigiPay Merchant Portal - SDK Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #090d16;
+      color: #f1f5f9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #0f172a;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 18px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-pill {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    main {
+      flex: 1;
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 0 20px;
+      width: 100%;
+    }
+    .hero {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 40px;
+      margin-bottom: 30px;
+    }
+    .hero h1 {
+      font-size: 28px;
+      margin-bottom: 12px;
+      color: #ffffff;
+    }
+    .hero p {
+      color: #94a3b8;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .card h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+      color: #38bdf8;
+    }
+    .card p {
+      font-size: 14px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    code {
+      background: #1e293b;
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .btn {
+      margin-top: 16px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1d4ed8; }
+  </style>
+
+  <!-- 1. Load Core JavaScript SDK -->
+  <script src="digipay-chat-sdk.js"></script>
+
+  <!-- 2. Load Plug-and-Play Chat Widget Component -->
+  <script src="digipay-chat-widget.js"></script>
+</head>
+<body>
+  <header>
+    <div class="logo">⚡ DigiPay Merchant Portal</div>
+    <div class="status-pill">● API Server Live (127.0.0.1:8000)</div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>Plug-and-Play Chat SDK Demo</h1>
+      <p>
+        This portal demonstrates how frontend web or mobile applications can integrate the DigiPay AI Chat Agent in 
+        <strong>1 line of code</strong> using the <code>&lt;digipay-chat&gt;</code> web component.
+      </p>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>1. Plug & Play Integration</h3>
+        <p>Drop the <code>&lt;digipay-chat csc-id="500100100014"&gt;&lt;/digipay-chat&gt;</code> element into any HTML page or React component tree.</p>
+      </div>
+
+      <div class="card">
+        <h3>2. Test Data Seeding</h3>
+        <p>Click below to pre-populate mock transactions, wallet balances, and KYC status for instant testing.</p>
+        <button id="seed-btn" class="btn">Seed Demo Database</button>
+      </div>
+
+      <div class="card">
+        <h3>3. Interactive Chat Widget</h3>
+        <p>Look at the bottom right corner of your screen! Click the blue chat icon to start talking with the AI Assistant.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Plug-and-play Chat Component (1 line of code) -->
+  <digipay-chat csc-id="500100100014" base-url="http://127.0.0.1:8000"></digipay-chat>
+
+  <script>
+    document.getElementById('seed-btn').addEventListener('click', async () => {
+      const sdk = new window.DigiPayChatSDK({ baseUrl: 'http://127.0.0.1:8000' });
+      try {
+        const res = await sdk.seedTestData();
+        alert(res.msg || 'Test database seeded successfully!');
+      } catch (err) {
+        alert('Seeding error: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>

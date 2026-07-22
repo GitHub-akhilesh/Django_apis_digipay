@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DigiPay AI Chat SDK — Interactive Dummy Test App</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: #0f172a;
+      --accent: #38bdf8;
+      --green: #4ade80;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f8fafc;
+      --text-sub: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .status-badge {
+      padding: 4px 12px;
+      background: rgba(74, 222, 128, 0.15);
+      border: 1px solid var(--green);
+      color: var(--green);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .container {
+      flex: 1;
+      padding: 30px;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .controls-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    label { font-size: 13px; color: var(--text-sub); }
+    select, button, input {
+      padding: 8px 14px;
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: #fff;
+      font-size: 13px;
+      outline: none;
+    }
+    button.btn-primary {
+      background: var(--accent);
+      color: #000;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+    }
+    button.btn-primary:hover { opacity: 0.9; }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+    .dash-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      min-height: 400px;
+    }
+    .dash-card h2 { font-size: 18px; margin-bottom: 12px; color: var(--accent); }
+    .dash-card p { font-size: 14px; color: var(--text-sub); line-height: 1.6; margin-bottom: 16px; }
+    .stats-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .stat-box {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .stat-box .val { font-size: 24px; font-weight: 700; color: #fff; }
+    .stat-box .lbl { font-size: 12px; color: var(--text-sub); margin-top: 4px; }
+    #inlineContainer {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      min-height: 350px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #020617;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>⚡ DigiPay Merchant Portal — Test Sandbox</span>
+    </div>
+    <div class="status-badge">SDK v2.0.0-RC1 Active</div>
+  </header>
+
+  <div class="container">
+    <!-- Interactive Test Control Bar -->
+    <div class="controls-card">
+      <div class="control-group">
+        <label>Merchant CSC ID:</label>
+        <input type="text" id="cscInput" value="500100100014" style="width: 140px;">
+      </div>
+
+      <div class="control-group">
+        <label>Widget Mode:</label>
+        <select id="modeSelect" onchange="changeWidgetMode(this.value)">
+          <option value="floating">Floating (Bottom Right Launcher)</option>
+          <option value="sidebar">Sidebar (Right Panel)</option>
+          <option value="inline">Inline (Embedded in Page)</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Theme:</label>
+        <select id="themeSelect" onchange="changeWidgetTheme(this.value)">
+          <option value="dark">Dark Theme</option>
+          <option value="light">Light Theme</option>
+        </select>
+      </div>
+
+      <button class="btn-primary" onclick="simulateTestQuery()">💬 Send Test Balance Query</button>
+    </div>
+
+    <!-- Merchant Dashboard Simulation -->
+    <div class="dashboard-grid">
+      <div class="dash-card">
+        <h2>Merchant Account Overview</h2>
+        <p>This is a live test environment. The DigiPay AI Chat Assistant SDK is embedded below and configured to answer wallet queries, transaction statuses, settlement schedules, and support tickets.</p>
+        
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="val">₹14,850.50</div>
+            <div class="lbl">Wallet Balance</div>
+          </div>
+          <div class="stat-box">
+            <div class="val">142</div>
+            <div class="lbl">Today's Transactions</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 24px;">
+          <p style="font-size:13px; color:var(--text-sub);">
+            💡 <strong>Testing Tip:</strong> Try asking questions like <em>"What is my wallet balance?"</em>, <em>"How do I process a refund?"</em>, or <em>"Show settlement schedule"</em>.
+          </p>
+        </div>
+      </div>
+
+      <!-- Container for Inline Mode Testing -->
+      <div class="dash-card">
+        <h2>Embedded Container View</h2>
+        <div id="inlineContainer">
+          <p style="color:var(--text-sub); font-size:13px;" id="inlinePlaceholder">Switch mode to <strong>Inline</strong> to render widget here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load DigiPay Chat SDK Core & Web Component Assets -->
+  <script src="../../sdk/digipay-chat-sdk.js"></script>
+  <script src="../../sdk/digipay-chat-widget.js"></script>
+
+  <!-- Live Chat Widget Instance -->
+  <digipay-chat id="mainChatWidget" csc-id="500100100014" mode="floating" theme="dark"></digipay-chat>
+
+  <script>
+    const widget = document.getElementById('mainChatWidget');
+
+    function changeWidgetMode(mode) {
+      widget.setAttribute('mode', mode);
+      const inlinePlaceholder = document.getElementById('inlinePlaceholder');
+      
+      if (mode === 'inline') {
+        inlinePlaceholder.style.display = 'none';
+        document.getElementById('inlineContainer').appendChild(widget);
+      } else {
+        inlinePlaceholder.style.display = 'block';
+        document.body.appendChild(widget);
+      }
+    }
+
+    function changeWidgetTheme(theme) {
+      widget.setAttribute('theme', theme);
+    }
+
+    function simulateTestQuery() {
+      // Programmatically trigger widget open
+      const launcher = widget.shadowRoot ? widget.shadowRoot.querySelector('button') : null;
+      if (launcher) {
+        launcher.click();
+      }
+      alert('DigiPay AI Assistant launcher activated! Type your query in the chat window.');
+    }
+  </script>
+</body>
+</html>

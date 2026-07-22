@@ -1,0 +1,41 @@
+name: Nightly Compatibility & Regression Automation
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Run every night at 2:00 AM UTC
+  workflow_dispatch:
+
+jobs:
+  matrix-test:
+    name: Compatibility Matrix (Node ${{ matrix.node-version }}, React ${{ matrix.react-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+        react-version: [17, 18, 19]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci || npm install
+
+      - name: Verify Bundle Budgets
+        run: python scripts/check_bundle_budget.py
+
+      - name: Run API Contract Verification
+        run: python tests/contract/test_sdk_api_contracts.py
+
+      - name: Run Playwright Multi-Browser Matrix
+        run: npx playwright test

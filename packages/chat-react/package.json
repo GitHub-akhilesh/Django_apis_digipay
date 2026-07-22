@@ -1,0 +1,20 @@
+{
+  "name": "@digipay/chat-react",
+  "version": "1.0.0",
+  "description": "Official React Component Library for DigiPay AI Chat Agent SDK",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@digipay/chat-core": "file:../chat-core"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-dom": ">=16.8.0"
+  },
+  "keywords": ["digipay", "react", "chat", "widget", "ui", "sdk"],
+  "author": "DigiPay Platform Engineering",
+  "license": "MIT"
+}

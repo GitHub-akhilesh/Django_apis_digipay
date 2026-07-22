@@ -1,7 +1,9 @@
+import os
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.utils.logging import setup_logging
 from app.middleware.correlation import CorrelationIdMiddleware
@@ -9,6 +11,7 @@ from app.middleware.auth_middleware import AuthMiddleware
 from app.middleware.deprecation import DeprecationMiddleware
 from app.middleware.rate_limit_middleware import RateLimitMiddleware
 from app.routers.v1.endpoints import router as v1_router
+from app.routers.v1.agent import router as agent_router
 
 # Initialize structured logging
 setup_logging()
@@ -45,8 +48,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register v1 router
+# Register routers
 app.include_router(v1_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
+
+# Serve Chat SDK and Demo UI static files
+sdk_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sdk")
+if os.path.exists(sdk_dir):
+    app.mount("/sdk", StaticFiles(directory=sdk_dir, html=True), name="sdk")
 
 @app.get("/", include_in_schema=False)
 async def index_redirect():

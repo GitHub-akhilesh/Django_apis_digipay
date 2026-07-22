@@ -1,0 +1,9 @@
+{
+    "featureFlags": {
+        "enableSemanticMemory": true,
+        "enableHybridRAG": true,
+        "enableStreamingEvents": true,
+        "enableTokenAccounting": true,
+        "enableHITLConfirmation": true
+    }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@digipay/chat-core",
+  "version": "2.0.0-beta",
+  "description": "Framework-agnostic TypeScript Core SDK for DigiPay AI Chat Agent & API Gateway",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/cjs/index.d.ts",
+  "scripts": {
+    "build:cjs": "tsc -p tsconfig.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build": "npm run build:cjs && npm run build:esm"
+  },
+  "keywords": ["digipay", "chat", "sdk", "ai", "agent", "typescript"],
+  "author": "DigiPay Platform Engineering",
+  "license": "MIT"
+}
