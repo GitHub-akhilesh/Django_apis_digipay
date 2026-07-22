@@ -5,7 +5,9 @@
 
 class DigiPayChatSDK {
   constructor(options = {}) {
-    this.baseUrl = (options.baseUrl || 'http://127.0.0.1:8081').replace(/\/$/, '');
+    const defaultUrl = typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000';
+    const rawUrl = options.baseUrl && options.baseUrl !== 'http://127.0.0.1:8000' && options.baseUrl !== 'http://10.1.76.194:8000' ? options.baseUrl : defaultUrl;
+    this.baseUrl = rawUrl.replace(/\/$/, '');
     this.cscId = options.cscId || '500100100014';
     this.username = options.username || 'merchant_admin';
     this.sessionId = options.sessionId || this._getOrCreateSessionId();

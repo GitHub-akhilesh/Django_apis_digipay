@@ -146,11 +146,11 @@
   </main>
 
   <!-- Plug-and-play Chat Component (1 line of code) -->
-  <digipay-chat csc-id="500100100014" base-url="http://127.0.0.1:8000"></digipay-chat>
+  <digipay-chat csc-id="500100100014"></digipay-chat>
 
   <script>
     document.getElementById('seed-btn').addEventListener('click', async () => {
-      const sdk = new window.DigiPayChatSDK({ baseUrl: 'http://127.0.0.1:8000' });
+      const sdk = new window.DigiPayChatSDK({ baseUrl: window.location.origin });
       try {
         const res = await sdk.seedTestData();
         alert(res.msg || 'Test database seeded successfully!');

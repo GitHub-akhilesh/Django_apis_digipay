@@ -6,8 +6,14 @@ import operator
 import re
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from langgraph.graph import StateGraph, END
-from langchain_core.runnables import RunnableConfig
+
+try:
+    from langgraph.graph import StateGraph, END
+    from langchain_core.runnables import RunnableConfig
+except ImportError:
+    StateGraph = None
+    END = None
+    RunnableConfig = None
 
 from app.services.tool_apis import ToolAPIs
 
@@ -495,46 +501,52 @@ def route_after_agent(state: AgentState) -> str:
         return "validation_agent"
 
 # 7. Construct LangGraph Workflow
-workflow = StateGraph(AgentState)
+graph = None
+if StateGraph is not None:
+    try:
+        workflow = StateGraph(AgentState)
 
-# Add Nodes
-workflow.add_node("intent_router", intent_router_node)
-workflow.add_node("finance_agent", finance_agent_node)
-workflow.add_node("kyc_agent", kyc_agent_node)
-workflow.add_node("technical_agent", technical_agent_node)
-workflow.add_node("faq_agent", faq_agent_node)
-workflow.add_node("tool_executor", tool_executor_node)
-workflow.add_node("validation_agent", validation_agent_node)
-workflow.add_node("response_agent", response_agent_node)
+        # Add Nodes
+        workflow.add_node("intent_router", intent_router_node)
+        workflow.add_node("finance_agent", finance_agent_node)
+        workflow.add_node("kyc_agent", kyc_agent_node)
+        workflow.add_node("technical_agent", technical_agent_node)
+        workflow.add_node("faq_agent", faq_agent_node)
+        workflow.add_node("tool_executor", tool_executor_node)
+        workflow.add_node("validation_agent", validation_agent_node)
+        workflow.add_node("response_agent", response_agent_node)
 
-# Set Entry Point
-workflow.set_entry_point("intent_router")
+        # Set Entry Point
+        workflow.set_entry_point("intent_router")
 
-# Define Transitions
-workflow.add_conditional_edges(
-    "intent_router",
-    lambda s: s["current_agent"],
-    {
-        "FinanceAgent": "finance_agent",
-        "KYCAgent": "kyc_agent",
-        "TechnicalAgent": "technical_agent",
-        "FAQAgent": "faq_agent",
-        "GeneralAgent": "response_agent"
-    }
-)
+        # Define Transitions
+        workflow.add_conditional_edges(
+            "intent_router",
+            lambda s: s["current_agent"],
+            {
+                "FinanceAgent": "finance_agent",
+                "KYCAgent": "kyc_agent",
+                "TechnicalAgent": "technical_agent",
+                "FAQAgent": "faq_agent",
+                "GeneralAgent": "response_agent"
+            }
+        )
 
-# Route specialized agents to tool executor or validation
-workflow.add_conditional_edges("finance_agent", route_after_agent, {"tool_executor": "tool_executor", "validation_agent": "validation_agent", "response_agent": "response_agent"})
-workflow.add_conditional_edges("kyc_agent", route_after_agent, {"tool_executor": "tool_executor", "validation_agent": "validation_agent", "response_agent": "response_agent"})
-workflow.add_conditional_edges("technical_agent", route_after_agent, {"tool_executor": "tool_executor", "validation_agent": "validation_agent", "response_agent": "response_agent"})
-workflow.add_edge("faq_agent", "response_agent")
+        # Route specialized agents to tool executor or validation
+        workflow.add_conditional_edges("finance_agent", route_after_agent, {"tool_executor": "tool_executor", "validation_agent": "validation_agent", "response_agent": "response_agent"})
+        workflow.add_conditional_edges("kyc_agent", route_after_agent, {"tool_executor": "tool_executor", "validation_agent": "validation_agent", "response_agent": "response_agent"})
+        workflow.add_conditional_edges("technical_agent", route_after_agent, {"tool_executor": "tool_executor", "validation_agent": "validation_agent", "response_agent": "response_agent"})
+        workflow.add_edge("faq_agent", "response_agent")
 
-workflow.add_edge("tool_executor", "validation_agent")
-workflow.add_edge("validation_agent", "response_agent")
-workflow.add_edge("response_agent", END)
+        workflow.add_edge("tool_executor", "validation_agent")
+        workflow.add_edge("validation_agent", "response_agent")
+        workflow.add_edge("response_agent", END)
 
-# Compile Graph
-graph = workflow.compile()
+        # Compile Graph
+        graph = workflow.compile()
+    except Exception as e:
+        logger.warning(f"Failed to compile LangGraph state machine: {e}. Falling back to sequential execution.")
+        graph = None
 
 
 class AgentOrchestrator:
@@ -559,15 +571,37 @@ class AgentOrchestrator:
             "response": ""
         }
         
-        # Execute the LangGraph compile using Configurable context db
         config = {"configurable": {"db": db, "thread_id": session_id}}
-        final_state = await graph.ainvoke(state, config)
-        
+
+        if graph is not None:
+            final_state = await graph.ainvoke(state, config)
+        else:
+            # Fallback sequential orchestrator execution
+            state.update(await intent_router_node(state))
+            agent_name = state.get("current_agent")
+            if agent_name == "FinanceAgent":
+                state.update(await finance_agent_node(state))
+            elif agent_name == "KYCAgent":
+                state.update(await kyc_agent_node(state))
+            elif agent_name == "TechnicalAgent":
+                state.update(await technical_agent_node(state))
+            elif agent_name == "FAQAgent":
+                state.update(await faq_agent_node(state))
+            
+            if state.get("tool_calls"):
+                state.update(await tool_executor_node(state, config))
+            
+            if agent_name != "FAQAgent" and agent_name != "GeneralAgent":
+                state.update(await validation_agent_node(state))
+                
+            state.update(await response_agent_node(state))
+            final_state = state
+
         # Log audit entry
         logger.info(
             f"AUDIT LOG | Session: {session_id} | Merchant: {csc_id} | Message: {message} | "
             f"Intent: {final_state['intent']} | Escalated: {final_state['escalate']} | "
-            f"Policy Checked: {final_state['policy_checked']} | Outcomes Count: {len(final_state['tool_outcomes'])}"
+            f"Policy Checked: {final_state['policy_checked']}"
         )
         
         return {

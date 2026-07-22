@@ -3,6 +3,10 @@ from typing import Dict, List, Set, Any, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class Settings(BaseSettings):
     ENV: str = "LOCAL"
     
@@ -43,7 +47,11 @@ class Settings(BaseSettings):
     INTERNAL_BYPASS_SECRET: str = "NPCI_INT3RNAL_Bypass_Secr3t_2026!" # Shared secret to protect bypass from spoofing
 
     model_config = SettingsConfigDict(
-        env_file=(".env.prod", ".env.local"),
+        env_file=(
+            os.path.join(BASE_DIR, ".env.prod"),
+            os.path.join(BASE_DIR, ".env.local"),
+            os.path.join(BASE_DIR, ".env")
+        ),
         env_file_encoding="utf-8",
         extra="ignore"
     )

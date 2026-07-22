@@ -299,8 +299,10 @@
     `;
     container.appendChild(root);
 
+    const targetBaseUrl = (config.baseUrl && config.baseUrl !== 'http://127.0.0.1:8000' && config.baseUrl !== 'http://10.1.76.194:8000') ? config.baseUrl : (typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000');
+
     const sdk = new window.DigiPayChatSDK({
-      baseUrl: config.baseUrl || 'http://127.0.0.1:8000',
+      baseUrl: targetBaseUrl,
       cscId: config.cscId || '500100100014'
     });
 

@@ -418,13 +418,13 @@ class DigipayService:
                 """
                 res = await db.execute(text(query), {"csc_id": csc_id_clean})
                 row = res.fetchone()
-                if row and row[0] is not None and float(row[0]) > 0:
+                if row and row[0] is not None:
                     balance = str(row[0])
             except Exception as e:
                 logger.warning(f"Error querying ledger table {ledger_table} for balance: {e}")
 
-            # 2. Fallback to sum of transaction amounts if balance is None or 0
-            if balance is None or float(balance or 0.0) == 0:
+            # 2. Fallback to sum of transaction amounts if balance is still None
+            if balance is None:
                 try:
                     query = """
                         SELECT COALESCE(SUM(amount), 0) AS wallet_balance
@@ -434,8 +434,7 @@ class DigipayService:
                     res = await db.execute(text(query), {"csc_id": csc_id_clean})
                     row = res.fetchone()
                     if row and row[0] is not None:
-                        val = float(row[0])
-                        balance = str(row[0]) if val != 0 else "0.00"
+                        balance = str(row[0])
                 except Exception as e:
                     logger.error(f"Error querying transactions sum for balance: {e}")
                     balance = "0.00"

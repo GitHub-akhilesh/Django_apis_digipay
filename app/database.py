@@ -21,15 +21,13 @@ def set_tenant_id(tenant_id: Optional[str]) -> None:
 # Database URL formulation
 if settings.ENV == "TEST":
     DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+elif os.getenv("DATABASE_URL"):
+    DATABASE_URL = os.getenv("DATABASE_URL")
+elif settings.DB_HOST and settings.DB_HOST != "127.0.0.1":
+    encoded_pass = urllib.parse.quote_plus(settings.DB_PASSWORD or "")
+    DATABASE_URL = f"mysql+aiomysql://{settings.DB_USER}:{encoded_pass}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 else:
-    env_db_url = os.getenv("DATABASE_URL")
-    if env_db_url:
-        DATABASE_URL = env_db_url
-    elif settings.DB_HOST and settings.DB_USER and settings.DB_NAME and settings.DB_HOST != "127.0.0.1":
-        encoded_pass = urllib.parse.quote_plus(settings.DB_PASSWORD)
-        DATABASE_URL = f"mysql+aiomysql://{settings.DB_USER}:{encoded_pass}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-    else:
-        DATABASE_URL = "sqlite+aiosqlite:///./digipay.db"
+    DATABASE_URL = "sqlite+aiosqlite:///./digipay.db"
 
 logger.info(f"Configuring database engine for env {settings.ENV} with URL {DATABASE_URL}")
 
