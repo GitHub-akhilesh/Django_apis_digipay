@@ -135,6 +135,37 @@ class DigipayService:
                 17: "VATM_RECOVERY"
             }
 
+def parse_bank_name_from_receipt(receipt_str: Optional[str]) -> str:
+    if not receipt_str or receipt_str == 'null':
+        return "None"
+    try:
+        data = json.loads(receipt_str) if isinstance(receipt_str, str) else receipt_str
+        if isinstance(data, dict):
+            return str(data.get('Bank Name') or data.get('bank_name') or data.get('bank') or "None")
+    except Exception:
+        pass
+    return "None"
+
+def format_log_memo(memo: Optional[str]) -> str:
+    if not memo:
+        return "00 - Success"
+    m_upper = str(memo).strip().upper()
+    if m_upper in ['SUCCESS', 'SUCCESSFUL']:
+        return "00 - Success"
+    return str(memo)
+
+class DigipayService:
+    @staticmethod
+    async def get_category_mappings(db: AsyncSession) -> Dict[int, str]:
+        """Fetch and cache category mappings dynamically from category_mapping table"""
+        try:
+            stmt = text("SELECT id, category_name FROM category_mapping")
+            res = await db.execute(stmt)
+            return {int(row[0]): row[1] for row in res.fetchall()}
+        except Exception as e:
+            logger.warning(f"Failed to fetch category mappings: {e}")
+            return {}
+
     @staticmethod
     async def get_txn_logs(
         db: AsyncSession,
@@ -146,140 +177,135 @@ class DigipayService:
         cp: int,
         txn_type: str
     ) -> dict:
-        # Determine partition ledger table for cscId to run the join
-        ledger_table = get_ledger_table_name(csc_id)
-
         # Format query dates
         from_date = parse_date(from_date_str)
         to_date = parse_date(to_date_str)
+        from_datetime = datetime.datetime.combine(from_date, datetime.time.min)
+        to_datetime = datetime.datetime.combine(to_date, datetime.time.max)
 
-        # Pagination offsets
+        # Pagination offset
         offset = (cp - 1) * rpp
 
-        # Determine transaction filter by types
-        # Map requested type (e.g. AEPS_CASH_WITHDRAWAL) to DB columns
+        # Type filter clause
         type_filter_clause = "1=1"
         if txn_type == "AEPS_CASH_WITHDRAWAL":
-            type_filter_clause = "t.category = 'AEPS' AND t.type = 'Cash Withdrawal'"
+            type_filter_clause = "(t.category = 'AEPS' AND t.type = 'Cash Withdrawal')"
         elif txn_type == "AEPS_MINI_STATEMENT":
-            type_filter_clause = "t.category = 'AEPS' AND t.type = 'Mini Statement'"
+            type_filter_clause = "(t.category = 'AEPS' AND t.type = 'Mini Statement')"
         elif txn_type == "PAYOUT":
-            type_filter_clause = "t.category = 'PAYOUT' OR t.type = 'Payout'"
+            type_filter_clause = "(t.category = 'PAYOUT' OR t.type = 'Payout')"
         elif txn_type == "DSP_TOPUP":
-            type_filter_clause = "t.category = 'DSP_TOPUP' OR t.type = 'DSP Topup'"
-        else:
-            type_filter_clause = f"(t.category = '{txn_type}' OR t.type = '{txn_type}')"
+            type_filter_clause = "(t.category = 'DSP_TOPUP' OR t.type = 'DSP Topup')"
+        elif txn_type and txn_type != "ALL":
+            type_filter_clause = f"(t.category = :txn_type OR t.type = :txn_type)"
 
         search_clause = ""
         params = {
             "csc_id": csc_id,
-            "from_date": from_date,
-            "to_date": to_date,
+            "from_date": from_datetime,
+            "to_date": to_datetime,
             "limit": rpp,
             "offset": offset
         }
+        if txn_type and txn_type not in ["AEPS_CASH_WITHDRAWAL", "AEPS_MINI_STATEMENT", "PAYOUT", "DSP_TOPUP", "ALL"]:
+            params["txn_type"] = txn_type
 
         if search_query:
-            search_clause = "AND (t.txn_id LIKE :search OR t.rrn LIKE :search OR t.mobile LIKE :search)"
+            search_clause = "AND (t.txn_id LIKE :search OR t.rrn LIKE :search OR t.mobile LIKE :search OR t.masked_aadhaar LIKE :search)"
             params["search"] = f"%{search_query}%"
 
-        # 1. Query Total Records count
+        # 1. Query Total Records count (excluding Bio auth)
         count_sql = f"""
             SELECT COUNT(*)
             FROM transactions t
             WHERE t.user_id = :csc_id
               AND t.date BETWEEN :from_date AND :to_date
+              AND t.type != 'Bio auth'
               AND {type_filter_clause}
               {search_clause}
         """
-        count_res = await db.execute(text(count_sql), params)
-        total_records = count_res.scalar() or 0
+        try:
+            count_res = await db.execute(text(count_sql), params)
+            total_records = count_res.scalar() or 0
+        except Exception as e:
+            logger.error(f"Error counting logs: {e}")
+            total_records = 0
+
         total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
 
         # 2. Query Page records
-        # Use LEFT JOIN to join transactions with partitioned ledger table
-        # We dynamically select join syntax: SQLite tests don't support CONVERT, but production MySQL needs it to join different collations/charsets efficiently.
-        from app.config import settings
-        join_clause = "CONVERT(t.txn_id USING latin1) = l.merchantTxn"
-        if settings.ENV == "TEST":
-            join_clause = "t.txn_id = l.merchantTxn"
-
         fetch_sql = f"""
             SELECT
-                t.id, t.user_id, t.txn_id, t.amount, t.type, t.status, t.date, t.category, t.mobile, t.masked_aadhaar, t.rrn,
-                l.walletBalance, l.bank_iin, l.stateCode, l.districtCode
+                t.id, t.user_id, t.txn_id, t.amount, t.type, t.status, t.date, t.category,
+                t.mobile, t.masked_aadhaar, t.rrn, t.receipt, t.memo, t.commission, t.tds
             FROM transactions t
-            LEFT JOIN {ledger_table} l ON {join_clause}
             WHERE t.user_id = :csc_id
               AND t.date BETWEEN :from_date AND :to_date
+              AND t.type != 'Bio auth'
               AND {type_filter_clause}
               {search_clause}
             ORDER BY t.date DESC, t.id DESC
             LIMIT :limit OFFSET :offset
         """
 
-        res = await db.execute(text(fetch_sql), params)
-        rows = res.fetchall()
+        try:
+            res = await db.execute(text(fetch_sql), params)
+            rows = res.fetchall()
+            cols = res.keys()
+        except Exception as e:
+            logger.error(f"Error fetching logs: {e}")
+            rows = []
+            cols = []
 
         records = []
-        for row in rows:
-            # Map Row to LogRecord schema
-            # Handle stateCode / districtCode conversions defensively
-            state_code = 0
-            if row.stateCode:
-                try:
-                    state_code = int(row.stateCode)
-                except ValueError:
-                    pass
+        for index, row_tuple in enumerate(rows, start=offset + 1):
+            row = dict(zip(cols, row_tuple))
 
-            district_code = 0
-            if row.districtCode:
-                try:
-                    district_code = int(row.districtCode)
-                except ValueError:
-                    pass
+            raw_amt = float(row.get("amount") or 0.0)
+            comm = float(row.get("commission") or 0.0)
+            tds = float(row.get("tds") or 0.0)
+            net_amt = raw_amt - comm + tds
 
-            # Format date: e.g. "19-06-2026 16:26:05"
+            memo_str = format_log_memo(row.get("memo"))
+            bank_name = parse_bank_name_from_receipt(row.get("receipt"))
+            customer_str = format_masked_aadhaar(row.get("masked_aadhaar"))
+
+            # Format date string
+            dt_raw = row.get("date")
             dt_str = ""
-            if row.date:
-                if isinstance(row.date, str):
-                    try:
-                        dt = datetime.datetime.strptime(row.date, "%Y-%m-%d %H:%M:%S")
-                        dt_str = dt.strftime("%d-%m-%Y %H:%M:%S")
-                    except ValueError:
-                        try:
-                            dt = datetime.datetime.strptime(row.date.split(".")[0], "%Y-%m-%dT%H:%M:%S")
-                            dt_str = dt.strftime("%d-%m-%Y %H:%M:%S")
-                        except ValueError:
-                            dt_str = row.date
-                elif hasattr(row.date, "strftime"):
-                    dt_str = row.date.strftime("%d-%m-%Y %H:%M:%S")
-                else:
-                    dt_str = str(row.date)
+            if isinstance(dt_raw, datetime.datetime):
+                dt_str = dt_raw.strftime("%d-%m-%Y %H:%M:%S")
+            elif isinstance(dt_raw, str):
+                try:
+                    dt = datetime.datetime.strptime(dt_raw, "%Y-%m-%d %H:%M:%S")
+                    dt_str = dt.strftime("%d-%m-%Y %H:%M:%S")
+                except ValueError:
+                    dt_str = dt_raw
+            else:
+                dt_str = str(dt_raw or "")
 
-            # Map result
-            result_str = row.status or "FAILURE"
+            status_str = str(row.get("status") or "FAILURE")
 
             rec = LogRecord(
-                custId=format_masked_aadhaar(row.masked_aadhaar),
-                custMobile=row.mobile or "0000000000",
-                stateCode=state_code,
-                districtCode=district_code,
+                custId=customer_str,
+                custMobile=str(row.get("mobile") or "0000000000"),
+                stateCode=0,
+                districtCode=0,
                 lgrAmtBefRfd=0.0,
                 lgrAmtAftRfd=0.0,
-                id=row.id,
-                cscId=row.user_id,
-                ownerId=row.user_id,
-                txnId=row.txn_id,
-                rrn=row.rrn or "",
-                balance=float(row.walletBalance) if row.walletBalance is not None else 0.0,
+                id=int(row.get("id") or index),
+                cscId=str(row.get("user_id") or csc_id),
+                ownerId=str(row.get("user_id") or csc_id),
+                txnId=str(row.get("txn_id") or ""),
+                rrn=str(row.get("rrn") or ""),
+                balance=0.0,
                 dateTime=dt_str,
-                result=result_str,
-                bankIin=row.bank_iin or "",
+                result=status_str,
+                bankIin=bank_name,
                 deviceType="WEB",
                 timeDiff=0,
                 lgrTimeDiff=0,
-                lgrAmt=abs(float(row.amount)) if row.amount is not None else 0.0
+                lgrAmt=abs(net_amt)
             )
             records.append(rec)
 
@@ -290,7 +316,6 @@ class DigipayService:
             "totalRecords": total_records
         }
 
-        # Base64 encode the payload
         return encode_payload_to_base64(payload)
 
 def update_running_balance(transaction_data: dict, logs_list: list, balance_update_at, running_balance: float) -> float:
