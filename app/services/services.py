@@ -130,7 +130,9 @@ class DigipayService:
                 12: "AEPS_REFUND",
                 13: "AEPS_RECOVERY",
                 14: "MATM_RECOVERY",
-                15: "MATM_REFUND",
+                15: "MATM_REFUND"
+            }
+
 import json
 
 def extract_bank_name_from_receipt(receipt_str: Optional[str]) -> str:
