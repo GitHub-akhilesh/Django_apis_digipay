@@ -104,35 +104,6 @@ def build_remarks_from_log(log: dict) -> str:
 
     return f"{category} {txn_type} ({txn_id})"
 
-class DigipayService:
-    @staticmethod
-    async def get_category_mappings(db: AsyncSession) -> Dict[int, str]:
-        """Fetch and cache category mappings dynamically from category_mapping table"""
-        try:
-            stmt = text("SELECT id, category_name FROM category_mapping")
-            res = await db.execute(stmt)
-            return {int(row[0]): row[1] for row in res.fetchall()}
-        except Exception as e:
-            logger.error(f"Error fetching category mapping: {e}")
-            # Static fallback mapping
-            return {
-                1: "AEPS_WITHDRAWAL",
-                2: "AEPS_DEPOSIT",
-                3: "PAYOUT",
-                4: "PAYOUT_REFUND",
-                5: "DSP_TOPUP",
-                6: "DSP_REFUND",
-                7: "VATM_WITHDRAWAL",
-                8: "MATM_WITHDRAWAL",
-                9: "AEPS_MINI_STATEMENT",
-                10: "MATME_WITHDRAWAL",
-                11: "TPPC_TRANSFER",
-                12: "AEPS_REFUND",
-                13: "AEPS_RECOVERY",
-                14: "MATM_RECOVERY",
-                15: "MATM_REFUND"
-            }
-
 import json
 
 def extract_bank_name_from_receipt(receipt_str: Optional[str]) -> str:
@@ -153,8 +124,6 @@ def format_txn_memo(memo: Optional[str]) -> str:
     if not memo:
         return "00 - Success"
     memo_str = str(memo).strip()
-    if memo_str.upper() in ["SUCCESS", "SUCCESSFUL"]:
-        return "00 - Success"
     return memo_str
 
 class DigipayService:
@@ -334,18 +303,6 @@ def update_running_balance(transaction_data: dict, logs_list: list, balance_upda
     transaction_data['debit_credit'] = "Credit" if amt > 0 else "Debit"
     logs_list.append(transaction_data)
     return running_balance
-
-class DigipayService:
-    @staticmethod
-    async def get_category_mappings(db: AsyncSession) -> Dict[int, str]:
-        """Fetch and cache category mappings dynamically from category_mapping table"""
-        try:
-            stmt = text("SELECT id, category_name FROM category_mapping")
-            res = await db.execute(stmt)
-            return {int(row[0]): row[1] for row in res.fetchall()}
-        except Exception as e:
-            logger.warning(f"Failed to fetch category mappings: {e}")
-            return {}
 
     @staticmethod
     async def get_passbook(
