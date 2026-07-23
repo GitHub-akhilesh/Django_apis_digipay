@@ -233,8 +233,8 @@
 
   class DigiPayChatElement extends HTMLElement {
     connectedCallback() {
-      const cscId = this.getAttribute('csc-id') || '500100100014';
-      const baseUrl = this.getAttribute('base-url') || 'http://127.0.0.1:8000';
+      const cscId = this.getAttribute('csc-id') || this.getAttribute('csc_id') || '500100100014';
+      const baseUrl = this.getAttribute('api-url') || this.getAttribute('api_url') || this.getAttribute('base-url') || 'http://10.1.76.194';
       const mode = this.getAttribute('mode') || 'floating';
       initDigiPayChat({ cscId, baseUrl, mode, targetElement: this });
     }
@@ -299,7 +299,10 @@
     `;
     container.appendChild(root);
 
-    const targetBaseUrl = (config.baseUrl && config.baseUrl !== 'http://127.0.0.1:8000' && config.baseUrl !== 'http://10.1.76.194:8000') ? config.baseUrl : (typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:8000');
+    let targetBaseUrl = (config.baseUrl || 'http://10.1.76.194').replace(/:8000\/?$/, '').replace(/\/$/, '');
+    if (targetBaseUrl.includes('localhost:5173') || targetBaseUrl.includes('127.0.0.1:5173')) {
+      targetBaseUrl = 'http://10.1.76.194';
+    }
 
     const sdk = new window.DigiPayChatSDK({
       baseUrl: targetBaseUrl,
