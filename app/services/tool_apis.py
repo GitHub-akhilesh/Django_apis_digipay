@@ -50,12 +50,17 @@ class ToolAPIs:
         logger.info(f"Tool API: get_wallet_balance(merchant_id={merchant_id})")
         from app.services.services import DigipayService
         
+        wallet = None
         try:
             stmt = select(Wallet).where(Wallet.merchant_id == merchant_id)
             result = await db.execute(stmt)
             wallet = result.scalar_one_or_none()
         except Exception as e:
             logger.info(f"Wallet table query notice: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
             wallet = None
 
         balances_dict = await DigipayService.get_wallet_balances(db, [merchant_id])
@@ -65,23 +70,17 @@ class ToolAPIs:
         except (ValueError, TypeError):
             ledger_balance = 0.0
 
-        if not wallet:
-            # Fallback/Autocreate if doesn't exist
-            wallet = Wallet(merchant_id=merchant_id, balance=Decimal(str(ledger_balance)), blocked_balance=Decimal("0.0"))
-            try:
-                db.add(wallet)
-                await db.flush()
-            except Exception as insert_err:
-                logger.info(f"Wallet insert notice: {insert_err}")
-        elif wallet.balance == Decimal("0.0") and ledger_balance > 0:
-            wallet.balance = Decimal(str(ledger_balance))
+        balance_val = float(wallet.balance) if wallet and wallet.balance is not None else ledger_balance
+        blocked_val = float(wallet.blocked_balance) if wallet and wallet.blocked_balance is not None else 0.0
+        last_date = wallet.last_settlement_date.strftime("%Y-%m-%d %H:%M:%S") if wallet and wallet.last_settlement_date else None
+        last_amount = float(wallet.last_settlement_amount) if wallet and wallet.last_settlement_amount is not None else 0.0
 
         return {
             "merchantId": merchant_id,
-            "balance": float(wallet.balance) if wallet and wallet.balance is not None else ledger_balance,
-            "blockedBalance": float(wallet.blocked_balance) if wallet and wallet.blocked_balance is not None else 0.0,
-            "lastSettlementDate": wallet.last_settlement_date.strftime("%Y-%m-%d %H:%M:%S") if wallet and wallet.last_settlement_date else None,
-            "lastSettlementAmount": float(wallet.last_settlement_amount) if wallet and wallet.last_settlement_amount is not None else 0.0
+            "balance": balance_val,
+            "blockedBalance": blocked_val,
+            "lastSettlementDate": last_date,
+            "lastSettlementAmount": last_amount
         }
 
     @staticmethod
