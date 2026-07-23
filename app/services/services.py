@@ -293,6 +293,44 @@ class DigipayService:
         # Base64 encode the payload
         return encode_payload_to_base64(payload)
 
+def update_running_balance(transaction_data: dict, logs_list: list, balance_update_at, running_balance: float) -> float:
+    amt = float(transaction_data.get('amount') or 0.0)
+    tx_date = transaction_data.get('date')
+
+    if balance_update_at is not None and isinstance(tx_date, (datetime.datetime, str)):
+        try:
+            if isinstance(tx_date, str):
+                tx_date_dt = datetime.datetime.strptime(tx_date.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            else:
+                tx_date_dt = tx_date
+            if isinstance(balance_update_at, str):
+                bal_up_dt = datetime.datetime.strptime(balance_update_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            else:
+                bal_up_dt = balance_update_at
+            
+            if tx_date_dt < bal_up_dt:
+                running_balance -= amt
+        except Exception:
+            running_balance -= amt
+    else:
+        running_balance -= amt
+
+    transaction_data['debit_credit'] = "Credit" if amt > 0 else "Debit"
+    logs_list.append(transaction_data)
+    return running_balance
+
+class DigipayService:
+    @staticmethod
+    async def get_category_mappings(db: AsyncSession) -> Dict[int, str]:
+        """Fetch and cache category mappings dynamically from category_mapping table"""
+        try:
+            stmt = text("SELECT id, category_name FROM category_mapping")
+            res = await db.execute(stmt)
+            return {int(row[0]): row[1] for row in res.fetchall()}
+        except Exception as e:
+            logger.warning(f"Failed to fetch category mappings: {e}")
+            return {}
+
     @staticmethod
     async def get_passbook(
         db: AsyncSession,
@@ -306,160 +344,137 @@ class DigipayService:
         # Format dates
         from_date = parse_date(from_date_str)
         to_date = parse_date(to_date_str)
-        offset = (cp - 1) * rpp
+        from_datetime = datetime.datetime.combine(from_date, datetime.time.min)
+        to_datetime = datetime.datetime.combine(to_date, datetime.time.max)
 
-        category_cache = await DigipayService.get_category_mappings(db)
-
-        # 1. Fetch current wallet_balance and balance_update_at from DigipayUsers
+        # 1. Fetch running balance & balance_update_at from DigipayUsers
         running_balance = 0.0
         balance_update_at = None
 
         try:
             user_stmt = text("SELECT wallet_balance, balance_update_at FROM DigipayUsers WHERE user_id = :csc_id")
             user_res = await db.execute(user_stmt, {"csc_id": csc_id})
-            u_row = user_res.fetchone()
-            if u_row and u_row[0] is not None and float(u_row[0]) > 0:
-                running_balance = float(u_row[0])
-                balance_update_at = u_row[1]
-            else:
-                balances_dict = await DigipayService.get_wallet_balances(db, [csc_id])
-                running_balance = float(balances_dict.get(csc_id, 0.0))
-        except Exception as e:
-            logger.warning(f"DigipayUsers query note: {e}")
-            balances_dict = await DigipayService.get_wallet_balances(db, [csc_id])
-            running_balance = float(balances_dict.get(csc_id, 0.0))
+            user_row = user_res.fetchone()
 
-        # 2. Query transactions table with status IN ('SUCCESS', 'INITIATED', 'REFUNDED')
-        search_clause = ""
+            if user_row and user_row[0] not in (None, 0, '0', '0.00'):
+                running_balance = float(user_row[0])
+                balance_update_at = user_row[1]
+            else:
+                calc_dict = await DigipayService.get_wallet_balances(db, [csc_id])
+                running_balance = float(calc_dict.get(csc_id, 0.0))
+        except Exception as e:
+            logger.warning(f"Could not fetch DigipayUsers balance for {csc_id}: {e}")
+
+        # 2. Query transactions directly from transactions table
         params = {
             "csc_id": csc_id,
-            "from_date": from_date,
-            "to_date": to_date,
-            "limit": rpp,
-            "offset": offset
+            "from_date": from_datetime,
+            "to_date": to_datetime
         }
 
-        if search_query:
-            search_clause = """
-                AND (rrn LIKE :search OR txn_id LIKE :search OR memo LIKE :search OR category LIKE :search)
-            """
-            params["search"] = f"%{search_query}%"
-
-        txn_sql = f"""
+        query_sql = """
             SELECT * FROM transactions
             WHERE user_id = :csc_id
               AND status IN ('SUCCESS', 'INITIATED', 'REFUNDED')
               AND date BETWEEN :from_date AND :to_date
               AND amount != 0
-              {search_clause}
             ORDER BY id DESC
-            LIMIT :limit OFFSET :offset
         """
-
-        raw_rows = []
-        cols = []
         try:
-            res = await db.execute(text(txn_sql), params)
-            raw_rows = res.fetchall()
+            res = await db.execute(text(query_sql), params)
+            rows = res.fetchall()
             cols = res.keys()
         except Exception as e:
-            logger.warning(f"Transactions query note (falling back to ledger table): {e}")
+            logger.error(f"Error querying transactions table for passbook: {e}")
+            rows = []
+            cols = []
 
-        # Fallback to partition ledger table if transactions table is empty or missing
-        if not raw_rows:
-            ledger_table = get_ledger_table_name(csc_id)
-            count_sql = f"""
-                SELECT COUNT(*)
-                FROM {ledger_table}
-                WHERE cscId = :csc_id
-                  AND txnDate BETWEEN :from_date AND :to_date
-            """
-            try:
-                count_res = await db.execute(text(count_sql), {"csc_id": csc_id, "from_date": from_date, "to_date": to_date})
-                total_records = count_res.scalar() or 0
-            except Exception:
-                total_records = 0
+        all_logs = []
+        for row_tuple in rows:
+            txn_dict = dict(zip(cols, row_tuple))
+            amt = float(txn_dict.get("amount") or 0.0)
+            tds_val = float(txn_dict.get("tds") or 0.0)
+            comm_val = float(txn_dict.get("commission") or 0.0)
+            status_val = str(txn_dict.get("status") or "")
 
-            fetch_sql = f"""
-                SELECT *
-                FROM {ledger_table}
-                WHERE cscId = :csc_id
-                  AND txnDate BETWEEN :from_date AND :to_date
-                ORDER BY creationDate DESC, sno DESC
-                LIMIT :limit OFFSET :offset
-            """
-            try:
-                res = await db.execute(text(fetch_sql), params)
-                raw_rows = res.fetchall()
-                cols = res.keys()
-            except Exception:
-                raw_rows = []
-                cols = []
+            # Transaction for TDS
+            if tds_val != 0 and status_val == 'SUCCESS':
+                tds_tx = dict(txn_dict)
+                tds_tx["amount"] = -tds_val
+                tds_tx["running_balance"] = running_balance
+                tds_tx["category"] = "TDS"
+                tds_tx["tds_category"] = txn_dict.get("category")
+                running_balance = update_running_balance(tds_tx, all_logs, balance_update_at, running_balance)
+                amt += tds_val
 
-        total_records = len(raw_rows) if raw_rows else 0
+            # Transaction for Commission
+            if comm_val != 0 and status_val == 'SUCCESS':
+                comm_tx = dict(txn_dict)
+                comm_tx["amount"] = comm_val
+                comm_tx["running_balance"] = running_balance
+                comm_tx["category"] = "Commission"
+                comm_tx["comm_category"] = txn_dict.get("category")
+                running_balance = update_running_balance(comm_tx, all_logs, balance_update_at, running_balance)
+                amt -= comm_val
+
+            # Transaction for Refunded
+            if status_val == 'REFUNDED':
+                ref_tx = dict(txn_dict)
+                ref_tx["amount"] = abs(amt)
+                ref_tx["running_balance"] = running_balance
+                running_balance = update_running_balance(ref_tx, all_logs, balance_update_at, running_balance)
+
+            txn_dict["amount"] = amt
+            txn_dict["running_balance"] = running_balance
+            running_balance = update_running_balance(txn_dict, all_logs, balance_update_at, running_balance)
+
+        # 3. Filter by search query if provided
+        if search_query:
+            sq = search_query.lower()
+            filtered_logs = [
+                log for log in all_logs
+                if sq in str(log.get("rrn") or "").lower()
+                or sq in str(log.get("txn_id") or "").lower()
+                or sq in str(log.get("remarks") or "").lower()
+            ]
+        else:
+            filtered_logs = all_logs
+
+        total_records = len(filtered_logs)
         total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
+        offset = (cp - 1) * rpp
+        page_logs = filtered_logs[offset:offset + rpp]
 
         records = []
-        for index, row_tuple in enumerate(raw_rows, start=1):
-            row_dict = dict(zip(cols, row_tuple))
-
-            sno = row_dict.get("sno") or row_dict.get("id") or index
-            csc_txn = row_dict.get("cscTxn") or row_dict.get("txn_id") or ""
-            merchant_txn = row_dict.get("merchantTxn") or row_dict.get("txn_id") or ""
-            wallet_ac = row_dict.get("walletAc") or csc_id
-            txn_amount = float(row_dict.get("txnAmount") or row_dict.get("amount") or 0.0)
-
-            vle_comm = float(row_dict.get("vleAmt") or row_dict.get("commission") or 0.0)
-            gst = float(row_dict.get("gstAmt") or 0.0)
-            inter_charge = float(row_dict.get("interChange") or 0.0)
-            vle_tds = float(row_dict.get("tds") or 0.0)
-
-            wallet_deduction = float(row_dict.get("walletTxnAmount") or abs(txn_amount))
-            wallet_balance = float(row_dict.get("walletBalance") or row_dict.get("running_balance") or running_balance)
-            rrn = str(row_dict.get("isoRrn") or row_dict.get("rrn") or "")
-
-            cat_raw = row_dict.get("category") or row_dict.get("categoryId") or "AEPS"
-            category_name = str(cat_raw)
-            if isinstance(cat_raw, int) or (isinstance(cat_raw, str) and cat_raw.isdigit()):
-                category_name = category_cache.get(int(cat_raw), "UNKNOWN")
-
-            txn_type = str(row_dict.get("txnType") or row_dict.get("type") or ("Credit" if txn_amount > 0 else "Debit"))
-            txn_date = str(row_dict.get("txnDate") or row_dict.get("date") or "")
-
-            creation_date = txn_date
-            cr_date = row_dict.get("creationDate") or row_dict.get("date")
-            if isinstance(cr_date, datetime.datetime):
-                creation_date = cr_date.strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
-            elif cr_date:
-                creation_date = str(cr_date)
-
-            customer_str = format_masked_aadhaar(row_dict.get("customer") or row_dict.get("masked_aadhaar"))
-            remarks_str = build_remarks_from_log(row_dict)
-            client_id = row_dict.get("clientId") or "CSC-DGP"
-            device_type = row_dict.get("deviceType") or "WEB"
+        for index, log in enumerate(page_logs, start=offset + 1):
+            remarks_str = build_remarks_from_log(log)
+            txn_amount = float(log.get("amount") or 0.0)
+            run_bal = float(log.get("running_balance") or 0.0)
+            txn_type = log.get("debit_credit") or ("Credit" if txn_amount > 0 else "Debit")
+            customer_str = format_masked_aadhaar(log.get("customer") or log.get("masked_aadhaar"))
 
             rec = PassbookRecord(
-                sno=sno,
+                sno=index,
                 cscId=csc_id,
-                cscTxn=str(csc_txn),
-                merchantTxn=str(merchant_txn),
-                walletAc=str(wallet_ac),
-                txnAmount=txn_amount,
-                vleComm=vle_comm,
-                gst=gst,
-                interCharge=inter_charge,
-                vleTds=vle_tds,
-                walletDeduction=wallet_deduction,
-                walletBalance=wallet_balance,
-                rrn=rrn,
-                category=category_name,
+                cscTxn=str(log.get("txn_id") or log.get("id") or ""),
+                merchantTxn=str(log.get("merchantTxn") or log.get("txn_id") or ""),
+                walletAc=str(csc_id),
+                txnAmount=abs(txn_amount),
+                vleComm=float(log.get("commission") or 0.0),
+                gst=0.0,
+                interCharge=0.0,
+                vleTds=float(log.get("tds") or 0.0),
+                walletDeduction=abs(txn_amount),
+                walletBalance=run_bal,
+                rrn=str(log.get("rrn") or ""),
+                category=str(log.get("category") or "AEPS"),
                 txnType=txn_type,
-                txnDate=txn_date,
-                creationDate=creation_date,
+                txnDate=str(log.get("date") or log.get("txn_date") or ""),
+                creationDate=str(log.get("date") or log.get("txn_date") or ""),
                 customer=customer_str,
                 remarks=remarks_str,
-                clientId=client_id,
-                deviceType=device_type
+                clientId=str(log.get("client_id") or "CSC-DGP"),
+                deviceType=str(log.get("device_type") or "WEB")
             )
             records.append(rec)
 
