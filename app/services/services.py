@@ -242,9 +242,11 @@ class DigipayService:
             elif row_date:
                 dt_str = str(row_date)
 
-            result_str = row.get("status") or "FAILURE"
-            memo_str = format_txn_memo(row.get("memo"))
+            remarks_str = build_remarks_from_log(row)
+            raw_memo = row.get("memo")
+            memo_str = str(raw_memo) if raw_memo and str(raw_memo).strip() and str(raw_memo) != 'null' else remarks_str
             masked_cust = format_masked_aadhaar(row.get("masked_aadhaar") or row.get("customer"))
+            raw_cust = str(row.get("customer") or row.get("masked_aadhaar") or "")
 
             rec = LogRecord(
                 custId=masked_cust,
@@ -265,7 +267,13 @@ class DigipayService:
                 deviceType=str(row.get("device_sno") or "WEB"),
                 timeDiff=0,
                 lgrTimeDiff=0,
-                lgrAmt=abs(net_amt)
+                lgrAmt=abs(net_amt),
+                amount=raw_amt,
+                amountFormatted=inr_currency_format(raw_amt),
+                memo=memo_str,
+                remarks=remarks_str,
+                customerId=raw_cust,
+                maskedAadhaar=masked_cust
             )
             records.append(rec)
 

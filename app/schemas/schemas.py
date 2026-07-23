@@ -68,6 +68,12 @@ class LogRecord(BaseModel):
     timeDiff: int
     lgrTimeDiff: int
     lgrAmt: float
+    amount: Optional[float] = 0.0
+    amountFormatted: Optional[str] = None
+    memo: Optional[str] = None
+    remarks: Optional[str] = None
+    customerId: Optional[str] = None
+    maskedAadhaar: Optional[str] = None
 
 class PassbookRecord(BaseModel):
     sno: int
