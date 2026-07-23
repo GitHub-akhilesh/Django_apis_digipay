@@ -135,24 +135,31 @@ class DigipayService:
                 17: "VATM_RECOVERY"
             }
 
-def parse_bank_name_from_receipt(receipt_str: Optional[str]) -> str:
+    @staticmethod
+    async def get_txn_logs(
+import json
+
+def extract_bank_name_from_receipt(receipt_str: Optional[str]) -> str:
     if not receipt_str or receipt_str == 'null':
         return "None"
     try:
-        data = json.loads(receipt_str) if isinstance(receipt_str, str) else receipt_str
-        if isinstance(data, dict):
-            return str(data.get('Bank Name') or data.get('bank_name') or data.get('bank') or "None")
+        receipt_data = json.loads(receipt_str) if isinstance(receipt_str, str) else receipt_str
+        if isinstance(receipt_data, dict):
+            return receipt_data.get("Bank Name") or receipt_data.get("bank_name") or "None"
     except Exception:
         pass
     return "None"
 
-def format_log_memo(memo: Optional[str]) -> str:
+def calculate_net_txn_amount(amount: float, commission: float, tds: float) -> float:
+    return float(amount) - float(commission) + float(tds)
+
+def format_txn_memo(memo: Optional[str]) -> str:
     if not memo:
         return "00 - Success"
-    m_upper = str(memo).strip().upper()
-    if m_upper in ['SUCCESS', 'SUCCESSFUL']:
+    memo_str = str(memo).strip()
+    if memo_str.upper() in ["SUCCESS", "SUCCESSFUL"]:
         return "00 - Success"
-    return str(memo)
+    return memo_str
 
 class DigipayService:
     @staticmethod
@@ -183,21 +190,22 @@ class DigipayService:
         from_datetime = datetime.datetime.combine(from_date, datetime.time.min)
         to_datetime = datetime.datetime.combine(to_date, datetime.time.max)
 
-        # Pagination offset
+        # Pagination offsets
         offset = (cp - 1) * rpp
 
-        # Type filter clause
-        type_filter_clause = "1=1"
-        if txn_type == "AEPS_CASH_WITHDRAWAL":
-            type_filter_clause = "(t.category = 'AEPS' AND t.type = 'Cash Withdrawal')"
-        elif txn_type == "AEPS_MINI_STATEMENT":
-            type_filter_clause = "(t.category = 'AEPS' AND t.type = 'Mini Statement')"
-        elif txn_type == "PAYOUT":
-            type_filter_clause = "(t.category = 'PAYOUT' OR t.type = 'Payout')"
-        elif txn_type == "DSP_TOPUP":
-            type_filter_clause = "(t.category = 'DSP_TOPUP' OR t.type = 'DSP Topup')"
-        elif txn_type and txn_type != "ALL":
-            type_filter_clause = f"(t.category = :txn_type OR t.type = :txn_type)"
+        # Determine transaction filter by type/category
+        type_filter_clause = "type NOT IN ('Bio Auth', 'Bio auth', 'Cash Deposit Advice(Cash Deposit)')"
+        if txn_type and txn_type != "ALL":
+            if txn_type == "AEPS_CASH_WITHDRAWAL":
+                type_filter_clause += " AND (category = 'AEPS' AND type = 'Cash Withdrawal')"
+            elif txn_type == "AEPS_MINI_STATEMENT":
+                type_filter_clause += " AND (category = 'AEPS' AND type = 'Mini Statement')"
+            elif txn_type == "PAYOUT":
+                type_filter_clause += " AND (category = 'PAYOUT' OR type = 'Payout')"
+            elif txn_type == "DSP_TOPUP":
+                type_filter_clause += " AND (category = 'DSP_TOPUP' OR type = 'DSP Topup')"
+            else:
+                type_filter_clause += f" AND (category = '{txn_type}' OR type = '{txn_type}')"
 
         search_clause = ""
         params = {
@@ -207,20 +215,17 @@ class DigipayService:
             "limit": rpp,
             "offset": offset
         }
-        if txn_type and txn_type not in ["AEPS_CASH_WITHDRAWAL", "AEPS_MINI_STATEMENT", "PAYOUT", "DSP_TOPUP", "ALL"]:
-            params["txn_type"] = txn_type
 
         if search_query:
-            search_clause = "AND (t.txn_id LIKE :search OR t.rrn LIKE :search OR t.mobile LIKE :search OR t.masked_aadhaar LIKE :search)"
+            search_clause = "AND (txn_id LIKE :search OR rrn LIKE :search OR mobile LIKE :search OR memo LIKE :search)"
             params["search"] = f"%{search_query}%"
 
-        # 1. Query Total Records count (excluding Bio auth)
+        # 1. Query Total Records count from transactions directly
         count_sql = f"""
             SELECT COUNT(*)
-            FROM transactions t
-            WHERE t.user_id = :csc_id
-              AND t.date BETWEEN :from_date AND :to_date
-              AND t.type != 'Bio auth'
+            FROM transactions
+            WHERE user_id = :csc_id
+              AND date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
               {search_clause}
         """
@@ -228,23 +233,20 @@ class DigipayService:
             count_res = await db.execute(text(count_sql), params)
             total_records = count_res.scalar() or 0
         except Exception as e:
-            logger.error(f"Error counting logs: {e}")
+            logger.error(f"Error counting transactions: {e}")
             total_records = 0
 
         total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
 
-        # 2. Query Page records
+        # 2. Query Page records from transactions directly
         fetch_sql = f"""
-            SELECT
-                t.id, t.user_id, t.txn_id, t.amount, t.type, t.status, t.date, t.category,
-                t.mobile, t.masked_aadhaar, t.rrn, t.receipt, t.memo, t.commission, t.tds
-            FROM transactions t
-            WHERE t.user_id = :csc_id
-              AND t.date BETWEEN :from_date AND :to_date
-              AND t.type != 'Bio auth'
+            SELECT *
+            FROM transactions
+            WHERE user_id = :csc_id
+              AND date BETWEEN :from_date AND :to_date
               AND {type_filter_clause}
               {search_clause}
-            ORDER BY t.date DESC, t.id DESC
+            ORDER BY date DESC, id DESC
             LIMIT :limit OFFSET :offset
         """
 
@@ -253,56 +255,49 @@ class DigipayService:
             rows = res.fetchall()
             cols = res.keys()
         except Exception as e:
-            logger.error(f"Error fetching logs: {e}")
+            logger.error(f"Error fetching transaction logs: {e}")
             rows = []
             cols = []
 
         records = []
-        for index, row_tuple in enumerate(rows, start=offset + 1):
+        for row_tuple in rows:
             row = dict(zip(cols, row_tuple))
 
             raw_amt = float(row.get("amount") or 0.0)
             comm = float(row.get("commission") or 0.0)
-            tds = float(row.get("tds") or 0.0)
-            net_amt = raw_amt - comm + tds
+            tds_amt = float(row.get("tds") or 0.0)
+            net_amt = calculate_net_txn_amount(raw_amt, comm, tds_amt)
 
-            memo_str = format_log_memo(row.get("memo"))
-            bank_name = parse_bank_name_from_receipt(row.get("receipt"))
-            customer_str = format_masked_aadhaar(row.get("masked_aadhaar"))
-
-            # Format date string
-            dt_raw = row.get("date")
             dt_str = ""
-            if isinstance(dt_raw, datetime.datetime):
-                dt_str = dt_raw.strftime("%d-%m-%Y %H:%M:%S")
-            elif isinstance(dt_raw, str):
-                try:
-                    dt = datetime.datetime.strptime(dt_raw, "%Y-%m-%d %H:%M:%S")
-                    dt_str = dt.strftime("%d-%m-%Y %H:%M:%S")
-                except ValueError:
-                    dt_str = dt_raw
-            else:
-                dt_str = str(dt_raw or "")
+            row_date = row.get("date") or row.get("txn_date")
+            if isinstance(row_date, datetime.datetime):
+                dt_str = row_date.strftime("%d-%m-%Y %H:%M:%S")
+            elif isinstance(row_date, str):
+                dt_str = row_date
+            elif row_date:
+                dt_str = str(row_date)
 
-            status_str = str(row.get("status") or "FAILURE")
+            result_str = row.get("status") or "FAILURE"
+            memo_str = format_txn_memo(row.get("memo"))
+            masked_cust = format_masked_aadhaar(row.get("masked_aadhaar") or row.get("customer"))
 
             rec = LogRecord(
-                custId=customer_str,
-                custMobile=str(row.get("mobile") or "0000000000"),
+                custId=masked_cust,
+                custMobile=row.get("mobile") or "0000000000",
                 stateCode=0,
                 districtCode=0,
                 lgrAmtBefRfd=0.0,
                 lgrAmtAftRfd=0.0,
-                id=int(row.get("id") or index),
-                cscId=str(row.get("user_id") or csc_id),
-                ownerId=str(row.get("user_id") or csc_id),
+                id=row.get("id") or 0,
+                cscId=csc_id,
+                ownerId=csc_id,
                 txnId=str(row.get("txn_id") or ""),
                 rrn=str(row.get("rrn") or ""),
-                balance=0.0,
+                balance=float(row.get("walletBalance") or 0.0),
                 dateTime=dt_str,
-                result=status_str,
-                bankIin=bank_name,
-                deviceType="WEB",
+                result=result_str,
+                bankIin=extract_bank_name_from_receipt(row.get("receipt")),
+                deviceType=str(row.get("device_sno") or "WEB"),
                 timeDiff=0,
                 lgrTimeDiff=0,
                 lgrAmt=abs(net_amt)
