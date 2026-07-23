@@ -137,6 +137,32 @@ def format_txn_memo(memo: Optional[str]) -> str:
     memo_str = str(memo).strip()
     return memo_str
 
+def update_running_balance(transaction_data: dict, logs_list: list, balance_update_at, running_balance: float) -> float:
+    amt = float(transaction_data.get('amount') or 0.0)
+    tx_date = transaction_data.get('date')
+
+    if balance_update_at is not None and isinstance(tx_date, (datetime.datetime, str)):
+        try:
+            if isinstance(tx_date, str):
+                tx_date_dt = datetime.datetime.strptime(tx_date.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            else:
+                tx_date_dt = tx_date
+            if isinstance(balance_update_at, str):
+                bal_up_dt = datetime.datetime.strptime(balance_update_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            else:
+                bal_up_dt = balance_update_at
+            
+            if tx_date_dt < bal_up_dt:
+                running_balance -= amt
+        except Exception:
+            running_balance -= amt
+    else:
+        running_balance -= amt
+
+    transaction_data['debit_credit'] = "Credit" if amt > 0 else "Debit"
+    logs_list.append(transaction_data)
+    return running_balance
+
 class DigipayService:
     @staticmethod
     async def get_category_mappings(db: AsyncSession) -> Dict[int, str]:
@@ -297,32 +323,6 @@ class DigipayService:
         }
 
         return encode_payload_to_base64(payload)
-
-def update_running_balance(transaction_data: dict, logs_list: list, balance_update_at, running_balance: float) -> float:
-    amt = float(transaction_data.get('amount') or 0.0)
-    tx_date = transaction_data.get('date')
-
-    if balance_update_at is not None and isinstance(tx_date, (datetime.datetime, str)):
-        try:
-            if isinstance(tx_date, str):
-                tx_date_dt = datetime.datetime.strptime(tx_date.split(".")[0], "%Y-%m-%d %H:%M:%S")
-            else:
-                tx_date_dt = tx_date
-            if isinstance(balance_update_at, str):
-                bal_up_dt = datetime.datetime.strptime(balance_update_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
-            else:
-                bal_up_dt = balance_update_at
-            
-            if tx_date_dt < bal_up_dt:
-                running_balance -= amt
-        except Exception:
-            running_balance -= amt
-    else:
-        running_balance -= amt
-
-    transaction_data['debit_credit'] = "Credit" if amt > 0 else "Debit"
-    logs_list.append(transaction_data)
-    return running_balance
 
     @staticmethod
     async def get_passbook(
