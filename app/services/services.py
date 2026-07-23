@@ -41,11 +41,18 @@ def format_masked_aadhaar(aadhaar: Optional[str]) -> str:
 def inr_currency_format(value) -> str:
     try:
         val = float(value)
-        # Format in Indian numbering system
         s, *d = f"{val:.2f}".split(".")
-        r = ",".join([s[-3:]] + [s[:-3][max(0, i-2):i] for i in range(len(s[:-3]), 0, -2)][::-1]) if len(s) > 3 else s
-        formatted = f"₹{r}.{d[0]}" if d else f"₹{r}"
-        return formatted
+        if len(s) > 3:
+            last3 = s[-3:]
+            rest = s[:-3]
+            groups = []
+            while rest:
+                groups.append(rest[-2:])
+                rest = rest[:-2]
+            r = ",".join(reversed(groups)) + "," + last3
+        else:
+            r = s
+        return f"₹{r}.{d[0]}" if d else f"₹{r}"
     except (ValueError, TypeError):
         return str(value)
 
