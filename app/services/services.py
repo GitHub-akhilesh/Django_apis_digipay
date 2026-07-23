@@ -463,46 +463,61 @@ class DigipayService:
 
     @staticmethod
     async def get_wallet_balances(db: AsyncSession, csc_ids: List[str]) -> Dict[str, str]:
-        balances = {}
-        for csc_id in csc_ids:
-            csc_id_clean = str(csc_id).strip()
-            if not csc_id_clean:
-                continue
+        """
+        Calculate wallet balance without ledger logic:
+        1. Queries SUM(amount) from transactions WHERE status IN ('SUCCESS', 'INITIATED') AND user_id IN (...)
+        2. Updates DigipayUsers table (wallet_balance, balance_update_at)
+        3. Returns user_id -> wallet_balance dictionary.
+        """
+        if not csc_ids:
+            return {}
 
-            # 1. Query from partitioned ledger
-            ledger_table = get_ledger_table_name(csc_id_clean)
-            balance = None
-            try:
-                query = f"""
-                    SELECT walletBalance
-                    FROM {ledger_table}
-                    WHERE cscId = :csc_id
-                    ORDER BY lastSno DESC
-                    LIMIT 1
-                """
-                res = await db.execute(text(query), {"csc_id": csc_id_clean})
-                val = res.scalar()
-                if val is not None:
-                    balance = str(val)
-            except Exception as e:
-                logger.warning(f"Error querying ledger table {ledger_table} for balance: {e}")
+        clean_csc_ids = [str(cid).strip() for cid in csc_ids if str(cid).strip()]
+        if not clean_csc_ids:
+            return {}
 
-            # 2. Fallback to sum of transaction amounts if balance is still None
-            if balance is None:
+        time_now = datetime.datetime.now()
+        update_time = time_now.strftime('%Y-%m-%d %H:%M:%S')
+
+        try:
+            placeholders = ", ".join([f":id_{i}" for i in range(len(clean_csc_ids))])
+            params = {f"id_{i}": cid for i, cid in enumerate(clean_csc_ids)}
+            params["update_time"] = update_time
+
+            # 1. Calculate sum from transactions table
+            sum_query = f"""
+                SELECT user_id, COALESCE(SUM(amount), 0) AS total
+                FROM transactions
+                WHERE status IN ('SUCCESS', 'INITIATED') AND user_id IN ({placeholders})
+                GROUP BY user_id
+            """
+            res = await db.execute(text(sum_query), params)
+            rows = res.fetchall()
+            found_balances = {str(row[0]): float(row[1]) for row in rows}
+
+            # 2. Update DigipayUsers table for updated balance timestamps
+            for cid in clean_csc_ids:
+                bal = found_balances.get(cid, 0.0)
                 try:
-                    query = """
-                        SELECT COALESCE(SUM(amount), 0) AS wallet_balance
-                        FROM transactions
-                        WHERE status IN ('SUCCESS', 'INITIATED') AND user_id = :csc_id
+                    update_query = """
+                        UPDATE DigipayUsers
+                        SET wallet_balance = :bal, balance_update_at = :update_time
+                        WHERE user_id = :csc_id
                     """
-                    res = await db.execute(text(query), {"csc_id": csc_id_clean})
-                    val = res.scalar()
-                    if val is not None:
-                        balance = str(val)
+                    await db.execute(text(update_query), {"bal": bal, "update_time": update_time, "csc_id": cid})
                 except Exception as e:
-                    logger.error(f"Error querying transactions sum for balance: {e}")
-                    balance = "0.00"
+                    logger.warning(f"Note: Could not update DigipayUsers for user_id={cid}: {e}")
 
-            balances[csc_id_clean] = balance if balance is not None else "0.00"
+            await db.commit()
 
-        return balances
+            # 3. Format result dictionary
+            result_balances = {}
+            for cid in clean_csc_ids:
+                val = found_balances.get(cid, 0.0)
+                result_balances[cid] = f"{val:.2f}"
+
+            return result_balances
+
+        except Exception as e:
+            logger.error(f"Error in cal_wallet_balance / get_wallet_balances: {e}", exc_info=True)
+            return {cid: "0.00" for cid in clean_csc_ids}
