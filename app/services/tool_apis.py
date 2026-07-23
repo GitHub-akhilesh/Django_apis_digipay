@@ -337,6 +337,7 @@ class ToolAPIs:
             total_records = 0
             records = []
 
+        total_volume = sum(float(r.get("lgrAmt") or r.get("amount") or 0.0) for r in records)
         mock_file_url = f"http://10.1.76.194/api/v1/statements/stmt_{merchant_id}_{from_date}_to_{to_date}.pdf"
 
         return {
@@ -344,6 +345,7 @@ class ToolAPIs:
             "fromDate": from_dt.strftime("%Y-%m-%d"),
             "toDate": to_dt.strftime("%Y-%m-%d"),
             "totalTransactions": total_records,
+            "totalVolume": total_volume,
             "downloadUrl": mock_file_url,
             "sampleRecords": records[:3]
         }

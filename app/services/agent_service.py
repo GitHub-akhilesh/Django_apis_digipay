@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, TypedDict, Annotated, Optional
 import operator
 import re
@@ -150,11 +150,10 @@ def simulate_llm(state: AgentState) -> Dict[str, Any]:
         intent = "General"
         if entity_id:
             tool_calls.append({"name": "closeTicket", "args": {"ticketId": entity_id}})
-    elif any(k in msg_lower for k in ["statement", "report"]):
+    elif any(k in msg_lower for k in ["statement", "report", "passbook", "log", "logs", "history"]):
         intent = "Wallet"
-        # Parse Dates if available or default
-        from_date = "2026-06-01"
-        to_date = "2026-06-30"
+        from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        to_date = datetime.now().strftime("%Y-%m-%d")
         tool_calls.append({
             "name": "generateStatement",
             "args": {
