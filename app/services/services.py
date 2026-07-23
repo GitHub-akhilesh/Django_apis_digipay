@@ -155,6 +155,20 @@ def format_txn_memo(memo: Optional[str]) -> str:
     memo_str = str(memo).strip()
     if memo_str.upper() in ["SUCCESS", "SUCCESSFUL"]:
         return "00 - Success"
+    return memo_str
+
+class DigipayService:
+    @staticmethod
+    async def get_category_mappings(db: AsyncSession) -> Dict[int, str]:
+        """Fetch and cache category mappings dynamically from category_mapping table"""
+        try:
+            stmt = text("SELECT id, category_name FROM category_mapping")
+            res = await db.execute(stmt)
+            return {int(row[0]): row[1] for row in res.fetchall()}
+        except Exception as e:
+            logger.warning(f"Failed to fetch category mappings: {e}")
+            return {}
+
     @staticmethod
     async def get_txn_logs(
         db: AsyncSession,
