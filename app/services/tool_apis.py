@@ -308,35 +308,42 @@ class ToolAPIs:
 
     @staticmethod
     async def generate_statement(db: AsyncSession, merchant_id: str, from_date: str, to_date: str) -> Dict[str, Any]:
-        """Generate transactions statement for a merchant."""
+        """Generate transactions statement / passbook for a merchant."""
         logger.info(f"Tool API: generate_statement(merchant_id={merchant_id}, from={from_date}, to={to_date})")
-        
-        # Verify merchant
-        merchant_stmt = select(Merchant).where(Merchant.id == merchant_id)
-        merchant_res = await db.execute(merchant_stmt)
-        if not merchant_res.scalar_one_or_none():
-            raise ValueError(f"Merchant ID {merchant_id} does not exist.")
+        from app.services.services import DigipayService, parse_date
+        import base64, json, datetime
 
-        # Query count and totals
-        stmt = select(Transaction).where(
-            Transaction.user_id == merchant_id,
-            Transaction.txn_date >= datetime.strptime(from_date, "%Y-%m-%d").date(),
-            Transaction.txn_date <= datetime.strptime(to_date, "%Y-%m-%d").date()
+        try:
+            from_dt = parse_date(from_date)
+            to_dt = parse_date(to_date)
+        except Exception:
+            to_dt = datetime.date.today()
+            from_dt = to_dt - datetime.timedelta(days=30)
+
+        res_b64 = await DigipayService.get_passbook(
+            db=db,
+            csc_id=merchant_id,
+            from_date_str=from_dt.strftime("%d-%m-%Y"),
+            to_date_str=to_dt.strftime("%d-%m-%Y"),
+            search_query="",
+            rpp=10,
+            cp=1
         )
-        res = await db.execute(stmt)
-        txns = res.scalars().all()
+        try:
+            decoded = json.loads(base64.b64decode(res_b64).decode('utf-8'))
+            total_records = decoded.get("totalRecords", 0)
+            records = decoded.get("list", [])
+        except Exception:
+            total_records = 0
+            records = []
 
-        total_txns = len(txns)
-        total_amount = sum(float(t.amount) for t in txns if t.amount is not None)
-
-        # Generate a mock file download link
-        mock_file_url = f"https://api.digipay.in/statements/stmt_{merchant_id}_{from_date}_to_{to_date}.pdf"
+        mock_file_url = f"http://10.1.76.194/api/v1/statements/stmt_{merchant_id}_{from_date}_to_{to_date}.pdf"
 
         return {
             "merchantId": merchant_id,
-            "fromDate": from_date,
-            "toDate": to_date,
-            "totalTransactions": total_txns,
-            "totalVolume": total_amount,
-            "downloadUrl": mock_file_url
+            "fromDate": from_dt.strftime("%Y-%m-%d"),
+            "toDate": to_dt.strftime("%Y-%m-%d"),
+            "totalTransactions": total_records,
+            "downloadUrl": mock_file_url,
+            "sampleRecords": records[:3]
         }
