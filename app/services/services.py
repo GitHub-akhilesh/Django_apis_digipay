@@ -303,16 +303,33 @@ class DigipayService:
         rpp: int,
         cp: int
     ) -> dict:
-        # Determine partition ledger table for cscId
-        ledger_table = get_ledger_table_name(csc_id)
-
         # Format dates
         from_date = parse_date(from_date_str)
         to_date = parse_date(to_date_str)
-
-        # Pagination offsets
         offset = (cp - 1) * rpp
 
+        category_cache = await DigipayService.get_category_mappings(db)
+
+        # 1. Fetch current wallet_balance and balance_update_at from DigipayUsers
+        running_balance = 0.0
+        balance_update_at = None
+
+        try:
+            user_stmt = text("SELECT wallet_balance, balance_update_at FROM DigipayUsers WHERE user_id = :csc_id")
+            user_res = await db.execute(user_stmt, {"csc_id": csc_id})
+            u_row = user_res.fetchone()
+            if u_row and u_row[0] is not None and float(u_row[0]) > 0:
+                running_balance = float(u_row[0])
+                balance_update_at = u_row[1]
+            else:
+                balances_dict = await DigipayService.get_wallet_balances(db, [csc_id])
+                running_balance = float(balances_dict.get(csc_id, 0.0))
+        except Exception as e:
+            logger.warning(f"DigipayUsers query note: {e}")
+            balances_dict = await DigipayService.get_wallet_balances(db, [csc_id])
+            running_balance = float(balances_dict.get(csc_id, 0.0))
+
+        # 2. Query transactions table with status IN ('SUCCESS', 'INITIATED', 'REFUNDED')
         search_clause = ""
         params = {
             "csc_id": csc_id,
@@ -324,105 +341,99 @@ class DigipayService:
 
         if search_query:
             search_clause = """
-                AND (merchantTxn LIKE :search OR cscTxn LIKE :search
-                     OR isoRrn LIKE :search OR remarks LIKE :search OR customer LIKE :search)
+                AND (rrn LIKE :search OR txn_id LIKE :search OR memo LIKE :search OR category LIKE :search)
             """
             params["search"] = f"%{search_query}%"
 
-        # Load category mappings dynamically
-        category_cache = await DigipayService.get_category_mappings(db)
-
-        # 1. Query Total count in partition ledger
-        count_sql = f"""
-            SELECT COUNT(*)
-            FROM {ledger_table}
-            WHERE cscId = :csc_id
-              AND txnDate BETWEEN :from_date AND :to_date
+        txn_sql = f"""
+            SELECT * FROM transactions
+            WHERE user_id = :csc_id
+              AND status IN ('SUCCESS', 'INITIATED', 'REFUNDED')
+              AND date BETWEEN :from_date AND :to_date
+              AND amount != 0
               {search_clause}
-        """
-        count_res = await db.execute(text(count_sql), params)
-        total_records = count_res.scalar() or 0
-        total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
-
-        # 2. Query Page records from partition ledger
-        fetch_sql = f"""
-            SELECT *
-            FROM {ledger_table}
-            WHERE cscId = :csc_id
-              AND txnDate BETWEEN :from_date AND :to_date
-              {search_clause}
-            ORDER BY creationDate DESC, sno DESC
+            ORDER BY id DESC
             LIMIT :limit OFFSET :offset
         """
 
-        res = await db.execute(text(fetch_sql), params)
-        rows = res.fetchall()
-        cols = res.keys()
+        raw_rows = []
+        cols = []
+        try:
+            res = await db.execute(text(txn_sql), params)
+            raw_rows = res.fetchall()
+            cols = res.keys()
+        except Exception as e:
+            logger.warning(f"Transactions query note (falling back to ledger table): {e}")
+
+        # Fallback to partition ledger table if transactions table is empty or missing
+        if not raw_rows:
+            ledger_table = get_ledger_table_name(csc_id)
+            count_sql = f"""
+                SELECT COUNT(*)
+                FROM {ledger_table}
+                WHERE cscId = :csc_id
+                  AND txnDate BETWEEN :from_date AND :to_date
+            """
+            try:
+                count_res = await db.execute(text(count_sql), {"csc_id": csc_id, "from_date": from_date, "to_date": to_date})
+                total_records = count_res.scalar() or 0
+            except Exception:
+                total_records = 0
+
+            fetch_sql = f"""
+                SELECT *
+                FROM {ledger_table}
+                WHERE cscId = :csc_id
+                  AND txnDate BETWEEN :from_date AND :to_date
+                ORDER BY creationDate DESC, sno DESC
+                LIMIT :limit OFFSET :offset
+            """
+            try:
+                res = await db.execute(text(fetch_sql), params)
+                raw_rows = res.fetchall()
+                cols = res.keys()
+            except Exception:
+                raw_rows = []
+                cols = []
+
+        total_records = len(raw_rows) if raw_rows else 0
+        total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
 
         records = []
-        for row_tuple in rows:
-            # Map dynamic row columns cleanly
+        for index, row_tuple in enumerate(raw_rows, start=1):
             row_dict = dict(zip(cols, row_tuple))
 
-            sno = row_dict.get("sno", 0)
-            csc_txn = row_dict.get("cscTxn") or row_dict.get("reqCode") or ""
-            merchant_txn = row_dict.get("merchantTxn") or ""
+            sno = row_dict.get("sno") or row_dict.get("id") or index
+            csc_txn = row_dict.get("cscTxn") or row_dict.get("txn_id") or ""
+            merchant_txn = row_dict.get("merchantTxn") or row_dict.get("txn_id") or ""
             wallet_ac = row_dict.get("walletAc") or csc_id
-            txn_amount = float(row_dict.get("txnAmount") or 0.0)
+            txn_amount = float(row_dict.get("txnAmount") or row_dict.get("amount") or 0.0)
 
-            # Map commission, gst, tds, intercharge
-            vle_comm = float(row_dict.get("vleAmt") or 0.0)
+            vle_comm = float(row_dict.get("vleAmt") or row_dict.get("commission") or 0.0)
             gst = float(row_dict.get("gstAmt") or 0.0)
             inter_charge = float(row_dict.get("interChange") or 0.0)
             vle_tds = float(row_dict.get("tds") or 0.0)
 
-            # Map wallet deduction
-            wallet_deduction = float(row_dict.get("walletTxnAmount") or row_dict.get("txnAmount") or 0.0)
-            wallet_balance = float(row_dict.get("walletBalance") or 0.0)
-            rrn = row_dict.get("isoRrn") or ""
+            wallet_deduction = float(row_dict.get("walletTxnAmount") or abs(txn_amount))
+            wallet_balance = float(row_dict.get("walletBalance") or row_dict.get("running_balance") or running_balance)
+            rrn = str(row_dict.get("isoRrn") or row_dict.get("rrn") or "")
 
-            # Lookup category name from mapping cache
-            category_id = row_dict.get("categoryId")
-            category_name = "UNKNOWN"
-            if category_id is not None:
-                category_name = category_cache.get(int(category_id), "UNKNOWN")
-            else:
-                # Guess from remarks if categoryId column doesn't exist
-                remarks_lower = (row_dict.get("remarks") or "").lower()
-                if "mini statement" in remarks_lower or "ms/" in remarks_lower:
-                    category_name = "AEPS_MINI_STATEMENT"
-                elif "cash withdrawal" in remarks_lower or "cw/" in remarks_lower:
-                    category_name = "AEPS_CASH_WITHDRAWAL"
-                elif "payout" in remarks_lower:
-                    category_name = "PAYOUT"
-                elif "topup" in remarks_lower:
-                    category_name = "DSP_TOPUP"
+            cat_raw = row_dict.get("category") or row_dict.get("categoryId") or "AEPS"
+            category_name = str(cat_raw)
+            if isinstance(cat_raw, int) or (isinstance(cat_raw, str) and cat_raw.isdigit()):
+                category_name = category_cache.get(int(cat_raw), "UNKNOWN")
 
-            # Adapt to user's exact response naming
-            if category_name == "AEPS_WITHDRAWAL":
-                category_name = "AEPS_CASH_WITHDRAWAL"
+            txn_type = str(row_dict.get("txnType") or row_dict.get("type") or ("Credit" if txn_amount > 0 else "Debit"))
+            txn_date = str(row_dict.get("txnDate") or row_dict.get("date") or "")
 
-            txn_type = row_dict.get("txnType") or "Cr"
-            txn_date = str(row_dict.get("txnDate") or "")
-
-            creation_date = ""
-            cr_date = row_dict.get("creationDate")
+            creation_date = txn_date
+            cr_date = row_dict.get("creationDate") or row_dict.get("date")
             if isinstance(cr_date, datetime.datetime):
                 creation_date = cr_date.strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
-            elif isinstance(cr_date, str):
-                try:
-                    dt = datetime.datetime.strptime(cr_date, "%Y-%m-%d %H:%M:%S")
-                    creation_date = dt.strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
-                except ValueError:
-                    try:
-                        dt = datetime.datetime.strptime(cr_date.split(".")[0], "%Y-%m-%dT%H:%M:%S")
-                        creation_date = dt.strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
-                    except ValueError:
-                        creation_date = cr_date
             elif cr_date:
                 creation_date = str(cr_date)
 
-            customer_str = format_masked_aadhaar(row_dict.get("customer"))
+            customer_str = format_masked_aadhaar(row_dict.get("customer") or row_dict.get("masked_aadhaar"))
             remarks_str = build_remarks_from_log(row_dict)
             client_id = row_dict.get("clientId") or "CSC-DGP"
             device_type = row_dict.get("deviceType") or "WEB"
@@ -440,7 +451,7 @@ class DigipayService:
                 vleTds=vle_tds,
                 walletDeduction=wallet_deduction,
                 walletBalance=wallet_balance,
-                rrn=str(rrn),
+                rrn=rrn,
                 category=category_name,
                 txnType=txn_type,
                 txnDate=txn_date,
