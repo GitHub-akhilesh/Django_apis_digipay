@@ -44,7 +44,8 @@ try:
         host=redis_host,
         port=settings.REDIS_PORT,
         db=settings.REDIS_DB,
-        socket_timeout=2.0,
+        socket_timeout=1.0,
+        socket_connect_timeout=1.0,
         decode_responses=True
     )
     redis_client.ping()
@@ -58,16 +59,19 @@ except Exception as e:
 in_memory_memory: Dict[str, List[Dict[str, str]]] = {}
 
 def get_session_history(session_id: str) -> List[Dict[str, str]]:
+    global use_redis
     if use_redis and redis_client:
         try:
             val = redis_client.get(f"agent:session:{session_id}")
             if val:
                 return json.loads(val)
         except Exception as e:
-            logger.error(f"Redis get history error: {e}")
+            logger.error(f"Redis get history error: {e}. Switching to in-memory.")
+            use_redis = False
     return in_memory_memory.get(session_id, [])
 
 def save_session_history(session_id: str, history: List[Dict[str, str]]):
+    global use_redis
     trimmed_history = history[-10:]
     if use_redis and redis_client:
         try:
@@ -78,7 +82,8 @@ def save_session_history(session_id: str, history: List[Dict[str, str]]):
             )
             return
         except Exception as e:
-            logger.error(f"Redis save history error: {e}")
+            logger.error(f"Redis save history error: {e}. Switching to in-memory.")
+            use_redis = False
     in_memory_memory[session_id] = trimmed_history
 
 @router.post("/agent/chat", response_model=AgentChatResponse)

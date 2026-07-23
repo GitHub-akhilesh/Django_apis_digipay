@@ -417,9 +417,9 @@ class DigipayService:
                     LIMIT 1
                 """
                 res = await db.execute(text(query), {"csc_id": csc_id_clean})
-                row = res.fetchone()
-                if row and row[0] is not None:
-                    balance = str(row[0])
+                val = res.scalar()
+                if val is not None:
+                    balance = str(val)
             except Exception as e:
                 logger.warning(f"Error querying ledger table {ledger_table} for balance: {e}")
 
@@ -432,9 +432,9 @@ class DigipayService:
                         WHERE status IN ('SUCCESS', 'INITIATED') AND user_id = :csc_id
                     """
                     res = await db.execute(text(query), {"csc_id": csc_id_clean})
-                    row = res.fetchone()
-                    if row and row[0] is not None:
-                        balance = str(row[0])
+                    val = res.scalar()
+                    if val is not None:
+                        balance = str(val)
                 except Exception as e:
                     logger.error(f"Error querying transactions sum for balance: {e}")
                     balance = "0.00"
