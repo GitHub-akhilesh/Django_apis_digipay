@@ -120,7 +120,7 @@ def encode_payload_to_base64(payload: dict) -> str:
 # Auth Token Request/Response Schemas
 class TokenRequest(BaseModel):
     username: str
-    password: str
+    password: Optional[str] = None
     cscId: Optional[str] = None
 
 class TokenResponse(BaseModel):
