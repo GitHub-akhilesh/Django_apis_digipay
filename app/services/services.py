@@ -242,6 +242,7 @@ class DigipayService:
             elif row_date:
                 dt_str = str(row_date)
 
+            result_str = str(row.get("status") or "FAILURE")
             remarks_str = build_remarks_from_log(row)
             raw_memo = row.get("memo")
             memo_str = str(raw_memo) if raw_memo and str(raw_memo).strip() and str(raw_memo) != 'null' else remarks_str
