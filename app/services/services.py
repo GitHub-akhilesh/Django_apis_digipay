@@ -131,12 +131,6 @@ class DigipayService:
                 13: "AEPS_RECOVERY",
                 14: "MATM_RECOVERY",
                 15: "MATM_REFUND",
-                16: "VATM_REFUND",
-                17: "VATM_RECOVERY"
-            }
-
-    @staticmethod
-    async def get_txn_logs(
 import json
 
 def extract_bank_name_from_receipt(receipt_str: Optional[str]) -> str:
