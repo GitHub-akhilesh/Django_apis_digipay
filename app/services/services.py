@@ -524,10 +524,10 @@ def update_running_balance(transaction_data: dict, logs_list: list, balance_upda
                         WHERE user_id = :csc_id
                     """
                     await db.execute(text(update_query), {"bal": bal, "update_time": update_time, "csc_id": cid})
+                    await db.commit()
                 except Exception as e:
+                    await db.rollback()
                     logger.warning(f"Note: Could not update DigipayUsers for user_id={cid}: {e}")
-
-            await db.commit()
 
             # 3. Format result dictionary
             result_balances = {}
