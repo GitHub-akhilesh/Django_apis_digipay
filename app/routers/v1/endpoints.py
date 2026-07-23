@@ -103,6 +103,7 @@ async def get_passbook(
 
 
 @router.post("/get-wallet-balance")
+@router.post("/wallet_balance")
 async def get_wallet_balance(
     req: WalletBalanceRequest, 
     db: AsyncSession = Depends(get_db),

@@ -30,71 +30,79 @@ def parse_date(date_str: str) -> datetime.date:
 def format_masked_aadhaar(aadhaar: Optional[str]) -> str:
     if not aadhaar:
         return "XXXX XXXX XXXX"
-    # If already masked, return it
     if "X" in aadhaar or "x" in aadhaar:
         return aadhaar
-    # Mask it (standard 12 digits Aadhaar: XXXX XXXX 1234)
     clean = aadhaar.replace(" ", "").replace("-", "")
     if len(clean) >= 4:
         last_4 = clean[-4:]
         return f"XXXX XXXX {last_4}"
-def generate_remarks(transaction_mode: str, cust_id: str = None, payee_details: str = None, vle_account: str = None, date_str: str = None, txn_id: str = None, category: str = None) -> str:
+    return aadhaar
+
+def inr_currency_format(value) -> str:
+    try:
+        val = float(value)
+        # Format in Indian numbering system
+        s, *d = f"{val:.2f}".split(".")
+        r = ",".join([s[-3:]] + [s[:-3][max(0, i-2):i] for i in range(len(s[:-3]), 0, -2)][::-1]) if len(s) > 3 else s
+        formatted = f"₹{r}.{d[0]}" if d else f"₹{r}"
+        return formatted
+    except (ValueError, TypeError):
+        return str(value)
+
+def generate_remarks(
+    transaction_mode: str,
+    cust_id: Optional[str] = None,
+    payee_details: Optional[str] = None,
+    vle_account: Optional[str] = None,
+    date: Optional[str] = None,
+    txn_id: Optional[str] = None,
+    category: Optional[str] = None
+) -> str:
     remarks_dict = {
-        "Cash Withdrawal AEPS": f"Pay {cust_id} ({txn_id})" if cust_id and txn_id else f"Pay ({txn_id})",
-        "Cash Deposit AEPS": f"BAV {cust_id} ({txn_id})" if cust_id and txn_id else f"BAV ({txn_id})",
-        "MATM": f"MATM {cust_id} ({txn_id})" if cust_id and txn_id else f"MATM ({txn_id})",
+        "Cash Withdrawal AEPS": f"Pay {cust_id} ({txn_id})",
+        "Cash Deposit AEPS": f"BAV {cust_id} ({txn_id})",
+        "MATM": f"MATM {cust_id} ({txn_id})",
         "DMT with payee detail": f"DMT payee detail {payee_details} ({txn_id})",
-        "Payout": f"PT with vle account {vle_account} ({txn_id})" if vle_account else f"PT ({txn_id})",
+        "Payout": f"PT with vle account {vle_account} ({txn_id})",
         "REFUNDED": f"Refund against {txn_id}",
-        "Cash Withdrawal Commission": f"Commission {category} {date_str} ({txn_id})",
-        "Cash Deposit Commission": f"Commission {category} {date_str} ({txn_id})",
-        "TDS Commission": f"TDS on Commission {category} {date_str} ({txn_id})",
-        "DSP Topup": f"DSP recharge {category} {date_str} ({txn_id})"
+        "Cash Withdrawal Commission": f"Commission {category} {date} ({txn_id})",
+        "Cash Deposit Commission": f"Commission {category} {date} ({txn_id})",
+        "TDS Commission": f"TDS on Commission {category} {date} ({txn_id})",
+        "DSP Topup": f"DSP recharge {category} {date} ({txn_id})"
     }
-    return remarks_dict.get(transaction_mode, "Invalid transaction mode")
+    return remarks_dict.get(transaction_mode, f"Transaction {txn_id} ({category})")
 
 def build_remarks_from_log(log: dict) -> str:
-    category = log.get("category", "")
-    txn_type = log.get("txnType", "")
-    txn_id = log.get("cscTxn") or log.get("merchantTxn") or log.get("txn_id") or ""
-    cust_id = format_masked_aadhaar(log.get("customer") or log.get("masked_aadhaar"))
-    date_str = str(log.get("txnDate") or log.get("creationDate") or log.get("date") or "")
-    status = log.get("status", "")
-    amount = float(log.get("txnAmount") or log.get("amount") or 0.0)
+    category = str(log.get('category') or "")
+    txn_type = str(log.get('type') or log.get('txnType') or "")
+    txn_id = str(log.get('txn_id') or log.get('cscTxn') or log.get('merchantTxn') or log.get('isoRrn') or "")
+    date_str = str(log.get('date') or log.get('txnDate') or "")
+    customer = format_masked_aadhaar(log.get('customer'))
 
-    # 1. Payout or DSP Topup
-    if txn_type in ("Payout", "DSP Topup"):
-        if status == 'REFUNDED' and amount > 0:
+    if log.get('remarks') and log['remarks'].strip() and log['remarks'] != 'null':
+        return log['remarks']
+
+    if txn_type in ("Payout", "DSP Topup") or category in ("PAYOUT", "DSP_TOPUP"):
+        if log.get("status") == 'REFUNDED' and float(log.get("amount") or log.get("txnAmount") or 0) > 0:
             return generate_remarks("REFUNDED", txn_id=txn_id)
-        vle_account = log.get("walletAc", "")
-        return generate_remarks(txn_type, vle_account=vle_account, date_str=date_str, txn_id=txn_id, category=category)
+        return generate_remarks(txn_type if txn_type in ("Payout", "DSP Topup") else "Payout", date=date_str, txn_id=txn_id, category=category)
 
-    # 2. AEPS Withdrawal
-    if category in ("AEPS", "AEPS_CASH_WITHDRAWAL") and txn_type in ("Cash Withdrawal", "Withdrawal"):
-        return generate_remarks("Cash Withdrawal AEPS", cust_id=cust_id, txn_id=txn_id, category=category)
+    if "WITHDRAWAL" in category.upper() or "CASH WITHDRAWAL" in txn_type.upper():
+        return generate_remarks("Cash Withdrawal AEPS", cust_id=customer, txn_id=txn_id, category="AEPS")
 
-    # 3. AEPS Deposit
-    if category == "AEPS" and txn_type == "Cash Deposit":
-        return generate_remarks("Cash Deposit AEPS", cust_id=cust_id, txn_id=txn_id, category=category)
+    if "DEPOSIT" in category.upper() or "CASH DEPOSIT" in txn_type.upper():
+        return generate_remarks("Cash Deposit AEPS", cust_id=customer, txn_id=txn_id, category="AEPS")
 
-    # 4. Commission
-    if category == "Commission" and txn_type in ["Cash Withdrawal", "Cash Deposit"]:
-        return generate_remarks(f"{txn_type} Commission", date_str=date_str, txn_id=txn_id, category=log.get("comm_category", "AEPS"))
+    if category == "Commission":
+        return generate_remarks("Cash Withdrawal Commission", date=date_str, txn_id=txn_id, category=log.get("comm_category", "AEPS"))
 
-    # 5. TDS
-    if category == "TDS" and txn_type in ["Cash Withdrawal", "Cash Deposit"]:
-        return generate_remarks("TDS Commission", date_str=date_str, txn_id=txn_id, category=log.get("tds_category", "AEPS"))
+    if category == "TDS":
+        return generate_remarks("TDS Commission", date=date_str, txn_id=txn_id, category=log.get("tds_category", "AEPS"))
 
-    # 6. MATM
-    if category == "MATM" and txn_type in ["Cash Withdrawal", "Balance Enquiry"]:
-        return generate_remarks("MATM", cust_id=cust_id, txn_id=txn_id, category=category)
+    if category == "MATM":
+        return generate_remarks("MATM", cust_id=customer, txn_id=txn_id, category="MATM")
 
-    # Default fallback
-    existing_remarks = log.get("remarks") or log.get("memo")
-    if existing_remarks and str(existing_remarks).strip():
-        return str(existing_remarks).strip()
-        
-    return f"{category} {txn_type}".strip()
+    return f"{category} {txn_type} ({txn_id})"
 
 class DigipayService:
     @staticmethod
@@ -415,12 +423,7 @@ class DigipayService:
                 creation_date = str(cr_date)
 
             customer_str = format_masked_aadhaar(row_dict.get("customer"))
-            
-            # Generate clean dynamic remarks if missing
-            remarks_str = row_dict.get("remarks")
-            if not remarks_str or remarks_str == "Invalid transaction mode":
-                remarks_str = build_remarks_from_log(row_dict)
-                
+            remarks_str = build_remarks_from_log(row_dict)
             client_id = row_dict.get("clientId") or "CSC-DGP"
             device_type = row_dict.get("deviceType") or "WEB"
 
