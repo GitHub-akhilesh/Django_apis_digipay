@@ -261,7 +261,7 @@ async def test_wallet_balance_endpoint():
         assert res_legacy.status_code == 200
         assert "500100100014" in res_legacy.json()
 
-        res_user_id = await ac.post("/api/v1/user_wallet_balance", json={
+        res_user_id = await ac.post("/api/v1/wallet_balance", json={
             "user_id": "500100100014"
         }, headers=headers)
         assert res_user_id.status_code == 200
