@@ -23,7 +23,9 @@ RESPONSE_FORMATTERS: Dict[str, Callable[[Dict[str, Any]], str]] = {
 
 class ResponseBuilderRegistry:
     @staticmethod
-    def format_response(tool_name: str, result: Dict[str, Any]) -> str:
+    def format_response(tool_name: str, result: Dict[str, Any], intent: str = None) -> str:
+        if intent == "Settlement" and tool_name == ToolName.GET_WALLET_BALANCE.value:
+            return SettlementResponseBuilder.format_last_settlement(result)
         formatter = RESPONSE_FORMATTERS.get(tool_name)
         if formatter:
             return formatter(result)

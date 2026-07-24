@@ -274,7 +274,7 @@ async def response_agent_node(state: AgentState) -> Dict[str, Any]:
             lines.append(f"Security Policy Block: {item['error']}")
             continue
             
-        formatted_text = ResponseBuilderRegistry.format_response(tool_name, res)
+        formatted_text = ResponseBuilderRegistry.format_response(tool_name, res, intent=state.get("intent"))
         lines.append(formatted_text)
         
     final_response = " ".join(lines)
