@@ -1,6 +1,6 @@
 # Release Manifest — v2.0.0-RC1
 
-**Release Date:** 2026-07-22  
+**Release Date:** 2026-07-24  
 **Release Type:** Candidate Release (Internal Merchant & Admin Portals)  
 **Architecture Status:** [FROZEN] Complete  
 
@@ -10,8 +10,8 @@
 
 | Asset | Size | Status | Target Limit |
 |---|---|---|---|
-| `digipay-chat-sdk.js` | **4.63 KB** | [PASS] Compliant | < 15 KB |
-| `digipay-chat-widget.js` | **10.45 KB** | [PASS] Compliant | < 30 KB |
+| `digipay-chat-sdk.js` | **4.86 KB** | [PASS] Compliant | < 15 KB |
+| `digipay-chat-widget.js` | **10.77 KB** | [PASS] Compliant | < 30 KB |
 
 ---
 
