@@ -67,34 +67,6 @@ class IntentClassifier:
         elif any(k in msg_lower for k in ["wallet balance", "what is my wallet balance", "check my wallet balance", "my wallet balance", "balance", "money in wallet", "wallet amount"]):
             intent = "Wallet"
             tool_calls.append({"name": ToolName.GET_WALLET_BALANCE.value, "args": {"merchantId": csc_id}})
-        elif any(k in msg_lower for k in ["daywise", "monthly report"]):
-            intent = "Wallet"
-            tool_calls.append({"name": ToolName.GET_DAYWISE_REPORT.value, "args": {"merchantId": csc_id, "yearMonth": "2026 June"}})
-        elif any(k in msg_lower for k in ["kyc", "verify profile", "account active"]):
-            intent = "KYC"
-            tool_calls.append({"name": ToolName.GET_KYC_STATUS.value, "args": {"merchantId": csc_id}})
-        elif any(k in msg_lower for k in ["bank account", "account details", "linked bank"]):
-            intent = "KYC"
-            tool_calls.append({"name": ToolName.GET_BANK_ACCOUNT.value, "args": {"merchantId": csc_id}})
-        elif any(k in msg_lower for k in ["refund eligibility", "eligible for refund", "can i get refund"]):
-            intent = "Refund"
-            if entity_id:
-                tool_calls.append({"name": ToolName.REFUND_ELIGIBILITY.value, "args": {"txnId": entity_id}})
-            else:
-                confidence = 0.6
-        elif any(k in msg_lower for k in ["transaction", "where is my money", "failed", "status of"]):
-            intent = "Refund"
-            if entity_id:
-                tool_calls.append({"name": ToolName.GET_TRANSACTION.value, "args": {"txnId": entity_id}})
-            else:
-                confidence = 0.5
-        elif any(k in msg_lower for k in ["settlement", "last settlement"]):
-            intent = "Settlement"
-            if entity_id:
-                tool_calls.append({"name": ToolName.GET_SETTLEMENT_STATUS.value, "args": {"txnId": entity_id}})
-            else:
-                tool_calls.append({"name": ToolName.GET_WALLET_BALANCE.value, "args": {"merchantId": csc_id}})
-                confidence = 0.95
         elif any(k in msg_lower for k in ["txn logs", "transaction logs", "logs", "last txn", "last transaction", "transactions", "old system txn", "old system transaction", "txn"]):
             intent = "Wallet"
             from_date, to_date = IntentClassifier._extract_date_range(last_msg)
@@ -119,6 +91,34 @@ class IntentClassifier:
                     "toDate": to_date
                 }
             })
+        elif any(k in msg_lower for k in ["daywise", "monthly report"]):
+            intent = "Wallet"
+            tool_calls.append({"name": ToolName.GET_DAYWISE_REPORT.value, "args": {"merchantId": csc_id, "yearMonth": "2026 June"}})
+        elif any(k in msg_lower for k in ["kyc", "verify profile", "account active"]):
+            intent = "KYC"
+            tool_calls.append({"name": ToolName.GET_KYC_STATUS.value, "args": {"merchantId": csc_id}})
+        elif any(k in msg_lower for k in ["bank account", "account details", "linked bank"]):
+            intent = "KYC"
+            tool_calls.append({"name": ToolName.GET_BANK_ACCOUNT.value, "args": {"merchantId": csc_id}})
+        elif any(k in msg_lower for k in ["refund eligibility", "eligible for refund", "can i get refund"]):
+            intent = "Refund"
+            if entity_id:
+                tool_calls.append({"name": ToolName.REFUND_ELIGIBILITY.value, "args": {"txnId": entity_id}})
+            else:
+                confidence = 0.6
+        elif any(k in msg_lower for k in ["settlement", "last settlement"]):
+            intent = "Settlement"
+            if entity_id:
+                tool_calls.append({"name": ToolName.GET_SETTLEMENT_STATUS.value, "args": {"txnId": entity_id}})
+            else:
+                tool_calls.append({"name": ToolName.GET_WALLET_BALANCE.value, "args": {"merchantId": csc_id}})
+                confidence = 0.95
+        elif any(k in msg_lower for k in ["transaction", "where is my money", "failed", "status of"]):
+            intent = "Refund"
+            if entity_id:
+                tool_calls.append({"name": ToolName.GET_TRANSACTION.value, "args": {"txnId": entity_id}})
+            else:
+                confidence = 0.5
         elif any(k in msg_lower for k in ["biometric", "face auth", "fingerprint", "face rd", "rd service", "rd", "faq", "sop", "guideline", "rule"]):
             intent = "FAQ"
 
