@@ -12,6 +12,10 @@ class MerchantRepository(BaseRepository[Merchant]):
         super().__init__(Merchant)
 
     async def get_by_merchant_id(self, db: AsyncSession, merchant_id: str) -> Optional[Merchant]:
-        stmt = select(Merchant).where(Merchant.merchant_id == merchant_id)
-        res = await db.execute(stmt)
-        return res.scalar_one_or_none()
+        try:
+            stmt = select(Merchant).where(Merchant.id == merchant_id)
+            res = await db.execute(stmt)
+            return res.scalar_one_or_none()
+        except Exception as e:
+            logger.warning(f"Merchant query failed for {merchant_id}: {e}")
+            return None
