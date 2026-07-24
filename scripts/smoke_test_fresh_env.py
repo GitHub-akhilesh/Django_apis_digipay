@@ -35,7 +35,7 @@ def main():
         ("Bundle Budget Check", "scripts/check_bundle_budget.py"),
         ("API Contract Tests", "tests/contract/test_sdk_api_contracts.py"),
         ("Security Guardrails", "tests/security/test_security_guardrails.py"),
-        ("Local Phase 1 Validation", "scripts/validate_local.py"),
+        ("Local Phase 1 Validation", "scripts/verify_local.py"),
         ("Full-Stack Orchestration", "scripts/run_full_stack.py")
     ]
 

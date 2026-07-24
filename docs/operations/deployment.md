@@ -22,5 +22,5 @@ This runbook covers step-by-step procedures for deploying DigiPay AI Platform ba
    - Invalidate edge CDN cache for `https://cdn.digipay.com/sdk/digipay-chat-sdk.js` and `digipay-chat-widget.js`.
 
 ## Post-Deployment Verification
-- Run `python scripts/validate_local.py` against live endpoint.
+- Run `python scripts/verify_local.py` against live endpoint.
 - Verify Telemetry Dashboard shows active status: `docs/site/telemetry.html`.

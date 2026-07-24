@@ -1,11 +1,11 @@
 from typing import Dict, Any, Callable
 from app.schemas.enums import ToolName
-from app.services.response_builders.wallet_builder import WalletResponseBuilder
-from app.services.response_builders.transaction_builder import TransactionResponseBuilder
-from app.services.response_builders.kyc_builder import KYCResponseBuilder
-from app.services.response_builders.settlement_builder import SettlementResponseBuilder
-from app.services.response_builders.ticket_builder import TicketResponseBuilder
-from app.services.response_builders.report_builder import ReportResponseBuilder
+from app.services.response_builders.wallet_response import WalletResponseBuilder
+from app.services.response_builders.transaction_response import TransactionResponseBuilder
+from app.services.response_builders.kyc_response import KYCResponseBuilder
+from app.services.response_builders.settlement_response import SettlementResponseBuilder
+from app.services.response_builders.ticket_response import TicketResponseBuilder
+from app.services.response_builders.report_response import ReportResponseBuilder
 
 RESPONSE_FORMATTERS: Dict[str, Callable[[Dict[str, Any]], str]] = {
     ToolName.GET_WALLET_BALANCE.value: WalletResponseBuilder.format_wallet_balance,

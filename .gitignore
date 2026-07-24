@@ -1,9 +1,9 @@
-# Virtual Environment
+# Virtual Environments
 venv/
 .venv/
 env/
 
-# Python Cache
+# Python Cache & Build Artifacts
 __pycache__/
 *.pyc
 *.pyo
@@ -11,17 +11,28 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+dist/
+build/
+wheels/
+*.egg-info/
 
-# Local Database fallback
+# Local Databases
 *.db
 *.sqlite
 
-# IDE and System Logs
+# Logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# IDE & System Files
 .vscode/
 .idea/
 .system_generated/
-*.log
-wheels/
 backups/
 prod_reference_10_1_76_194/
 
+# Environment Files (Do not commit secrets)
+.env
+.env.local
+.env.prod

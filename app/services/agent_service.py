@@ -9,7 +9,10 @@ from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
 
 from app.schemas.enums import ToolName
-from app.services.tool_apis import ToolAPIs
+from app.services.tools import (
+    WalletTool, TransactionTool, SettlementTool,
+    KYCTool, MerchantTool, TicketTool, ReportTool
+)
 from app.services.intent_classifier import IntentClassifier
 from app.services.response_builders import ResponseBuilderRegistry
 from app.services.audit_service import AuditService
@@ -40,10 +43,10 @@ def simulate_llm(state: AgentState) -> Dict[str, Any]:
 
 # 3. Named Async Tool Handlers for Clean Stack Traces
 async def _exec_get_transaction(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_transaction(db, args["txnId"])
+    return await TransactionTool.get_transaction(db, args["txnId"])
 
 async def _exec_get_wallet_balance(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_wallet_balance(
+    return await WalletTool.get_wallet_balance(
         db,
         args["merchantId"],
         fromDate=args.get("fromDate"),
@@ -51,43 +54,43 @@ async def _exec_get_wallet_balance(db: AsyncSession, args: Dict[str, Any]) -> Di
     )
 
 async def _exec_get_old_digipay_balance(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_old_digipay_balance(db, args["merchantId"])
+    return await WalletTool.get_old_digipay_balance(db, args["merchantId"])
 
 async def _exec_get_daywise_report(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_daywise_report(db, args["merchantId"], args.get("yearMonth", "2026 June"), args.get("day"))
+    return await ReportTool.get_daywise_report(db, args["merchantId"], args.get("yearMonth"), args.get("day"))
 
 async def _exec_get_txn_logs(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_txn_logs(db, args["merchantId"], args.get("fromDate", "2026-01-01"), args.get("toDate", "2026-12-31"))
+    return await TransactionTool.get_txn_logs(db, args["merchantId"], args.get("fromDate"), args.get("toDate"))
 
 async def _exec_get_kyc_status(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_kyc_status(db, args["merchantId"])
+    return await KYCTool.get_kyc_status(db, args["merchantId"])
 
 async def _exec_get_settlement_status(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_settlement_status(db, args["txnId"])
+    return await SettlementTool.get_settlement_status(db, args["txnId"])
 
 async def _exec_get_bank_account(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_bank_account(db, args["merchantId"])
+    return await MerchantTool.get_bank_account(db, args["merchantId"])
 
 async def _exec_get_merchant(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_merchant(db, args["merchantId"])
+    return await MerchantTool.get_merchant(db, args["merchantId"])
 
 async def _exec_get_aeps_status(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_aeps_status(db, args["txnId"])
+    return await ReportTool.get_aeps_status(db, args["txnId"])
 
 async def _exec_get_matm_status(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_matm_status(db, args["txnId"])
+    return await ReportTool.get_matm_status(db, args["txnId"])
 
 async def _exec_raise_ticket(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.raise_ticket(db, args["merchantId"], args["category"], args["details"])
+    return await TicketTool.raise_ticket(db, args["merchantId"], args["category"], args["details"])
 
 async def _exec_close_ticket(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.close_ticket(db, args["ticketId"])
+    return await TicketTool.close_ticket(db, args["ticketId"])
 
 async def _exec_refund_eligibility(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.check_refund_eligibility(db, args["txnId"])
+    return await TransactionTool.check_refund_eligibility(db, args["txnId"])
 
 async def _exec_generate_statement(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.generate_statement(db, args["merchantId"], args["fromDate"], args["toDate"])
+    return await TransactionTool.generate_statement(db, args["merchantId"], args.get("fromDate"), args.get("toDate"))
 
 TOOL_DISPATCHER = {
     ToolName.GET_TRANSACTION.value: _exec_get_transaction,
