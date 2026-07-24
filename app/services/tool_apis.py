@@ -310,7 +310,8 @@ class ToolAPIs:
     async def generate_statement(db: AsyncSession, merchant_id: str, from_date: str, to_date: str) -> Dict[str, Any]:
         """Generate transactions statement / passbook for a merchant."""
         logger.info(f"Tool API: generate_statement(merchant_id={merchant_id}, from={from_date}, to={to_date})")
-        from app.services.services import DigipayService, parse_date
+        from app.services.services import DigipayService
+        from app.utils.helpers import parse_date
         import base64, json, datetime
 
         try:
