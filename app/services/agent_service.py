@@ -363,5 +363,7 @@ class AgentOrchestrator:
             "intent": final_state.get("intent", "General"),
             "escalate": final_state.get("escalate", False),
             "confidenceScore": final_state.get("confidence_score", 1.0),
-            "policyChecked": final_state.get("policy_checked", True)
+            "confidence_score": final_state.get("confidence_score", 1.0),
+            "policyChecked": final_state.get("policy_checked", True),
+            "policy_checked": final_state.get("policy_checked", True)
         }

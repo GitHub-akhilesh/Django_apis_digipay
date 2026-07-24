@@ -122,11 +122,11 @@ async def chat_with_agent(
 
         return AgentChatResponse(
             status="OK",
-            response=result["response"],
-            intent=result["intent"],
-            escalate=result["escalate"],
-            confidenceScore=result["confidence_score"],
-            policyChecked=result["policy_checked"]
+            response=str(result.get("response", "")),
+            intent=str(result.get("intent", "General")),
+            escalate=bool(result.get("escalate", False)),
+            confidenceScore=float(result.get("confidenceScore", 1.0)),
+            policyChecked=bool(result.get("policyChecked", True))
         )
     except Exception as e:
         logger.error(f"Error in chat_with_agent: {e}", exc_info=True)
