@@ -10,6 +10,48 @@ class IntentClassifier:
     """Intent Classification Engine combining rule-based heuristics and LLM capability."""
 
     @staticmethod
+    def _extract_date_range(msg: str) -> tuple[str, str]:
+        now = datetime.now()
+        msg_lower = msg.lower()
+
+        # 1. ISO dates YYYY-MM-DD
+        iso_dates = re.findall(r'\b(\d{4}-\d{2}-\d{2})\b', msg)
+        if len(iso_dates) >= 2:
+            return iso_dates[0], iso_dates[1]
+        elif len(iso_dates) == 1:
+            return iso_dates[0], now.strftime("%Y-%m-%d")
+
+        # 2. Indian dates DD-MM-YYYY or DD/MM/YYYY
+        in_dates = re.findall(r'\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b', msg)
+        if len(in_dates) >= 2:
+            d1 = f"{in_dates[0][2]}-{int(in_dates[0][1]):02d}-{int(in_dates[0][0]):02d}"
+            d2 = f"{in_dates[1][2]}-{int(in_dates[1][1]):02d}-{int(in_dates[1][0]):02d}"
+            return d1, d2
+        elif len(in_dates) == 1:
+            d1 = f"{in_dates[0][2]}-{int(in_dates[0][1]):02d}-{int(in_dates[0][0]):02d}"
+            return d1, now.strftime("%Y-%m-%d")
+
+        # 3. Relative day counts: e.g. "last 7 days", "14 days", "last 60 days"
+        days_match = re.search(r'(?:last\s+)?(\d+)\s*days?', msg_lower)
+        if days_match:
+            num_days = int(days_match.group(1))
+            from_dt = now - timedelta(days=num_days)
+            return from_dt.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+
+        # 4. Keywords: today, yesterday
+        if "today" in msg_lower:
+            t_str = now.strftime("%Y-%m-%d")
+            return t_str, t_str
+        if "yesterday" in msg_lower:
+            y_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+            return y_str, y_str
+
+        # 5. Default fallback: last 30 days
+        from_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        to_date = now.strftime("%Y-%m-%d")
+        return from_date, to_date
+
+    @staticmethod
     def classify_intent(last_msg: str, csc_id: str) -> Dict[str, Any]:
         msg_lower = last_msg.lower()
         txn_id_match = re.search(r'(CZU[A-Z0-9]+|TKT-[A-Z0-9]+)', last_msg, re.IGNORECASE)
@@ -55,8 +97,7 @@ class IntentClassifier:
                 confidence = 0.95
         elif any(k in msg_lower for k in ["txn logs", "transaction logs", "logs", "last txn", "last transaction", "transactions", "old system txn", "old system transaction", "txn"]):
             intent = "Wallet"
-            from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            to_date = datetime.now().strftime("%Y-%m-%d")
+            from_date, to_date = IntentClassifier._extract_date_range(last_msg)
             tool_calls.append({
                 "name": ToolName.GET_TXN_LOGS.value,
                 "args": {
@@ -69,8 +110,7 @@ class IntentClassifier:
             })
         elif any(k in msg_lower for k in ["statement", "report", "passbook", "history"]):
             intent = "Wallet"
-            from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-            to_date = datetime.now().strftime("%Y-%m-%d")
+            from_date, to_date = IntentClassifier._extract_date_range(last_msg)
             tool_calls.append({
                 "name": ToolName.GENERATE_STATEMENT.value,
                 "args": {

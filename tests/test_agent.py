@@ -35,6 +35,16 @@ def test_intent_classifier_settlement_and_txn_logs():
     assert res_txns["tool_calls"][0]["name"] == ToolName.GET_TXN_LOGS.value
     assert res_txns["tool_calls"][0]["args"]["rpp"] == 10
 
+def test_intent_classifier_date_range_parsing():
+    res_iso = IntentClassifier.classify_intent("transaction logs from 2026-06-01 to 2026-06-15", "500100100014")
+    args_iso = res_iso["tool_calls"][0]["args"]
+    assert args_iso["fromDate"] == "2026-06-01"
+    assert args_iso["toDate"] == "2026-06-15"
+
+    res_rel = IntentClassifier.classify_intent("transaction logs for last 7 days", "500100100014")
+    args_rel = res_rel["tool_calls"][0]["args"]
+    assert args_rel["fromDate"] != args_rel["toDate"]
+
 def test_response_builder_registry():
     wallet_res = {
         "merchantId": "500100100014",
