@@ -19,10 +19,10 @@ class IntentClassifier:
         confidence = 0.95
         tool_calls = []
 
-        if any(k in msg_lower for k in ["old digipay", "old balance", "legacy balance", "old wallet"]):
+        if any(k in msg_lower for k in ["old digipay", "old balance", "legacy balance", "legacy system", "legacy system wallet", "old wallet"]):
             intent = "Wallet"
             tool_calls.append({"name": ToolName.GET_OLD_DIGIPAY_BALANCE.value, "args": {"merchantId": csc_id}})
-        elif any(k in msg_lower for k in ["balance", "money in wallet", "wallet amount"]):
+        elif any(k in msg_lower for k in ["wallet balance", "what is my wallet balance", "check my wallet balance", "my wallet balance", "balance", "money in wallet", "wallet amount"]):
             intent = "Wallet"
             tool_calls.append({"name": ToolName.GET_WALLET_BALANCE.value, "args": {"merchantId": csc_id}})
         elif any(k in msg_lower for k in ["daywise", "monthly report"]):

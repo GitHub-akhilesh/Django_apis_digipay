@@ -15,6 +15,15 @@ def test_intent_classifier_old_balance():
     assert res["intent"] == "Wallet"
     assert res["tool_calls"][0]["name"] == ToolName.GET_OLD_DIGIPAY_BALANCE.value
 
+    res2 = IntentClassifier.classify_intent("what is my old balance and legacy system wallet balance", "500100100014")
+    assert res2["intent"] == "Wallet"
+    assert res2["tool_calls"][0]["name"] == ToolName.GET_OLD_DIGIPAY_BALANCE.value
+
+def test_intent_classifier_wallet_balance_locked():
+    res = IntentClassifier.classify_intent("what is my wallet balance", "500100100014")
+    assert res["intent"] == "Wallet"
+    assert res["tool_calls"][0]["name"] == ToolName.GET_WALLET_BALANCE.value
+
 def test_response_builder_registry():
     wallet_res = {
         "merchantId": "500100100014",
