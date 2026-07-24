@@ -264,6 +264,24 @@ async def faq_agent_node(state: AgentState) -> Dict[str, Any]:
         "response": context_prefix + faq_content
     }
 
+TOOL_DISPATCHER = {
+    "getTransaction": lambda db, args: ToolAPIs.get_transaction(db, args["txnId"]),
+    "getWalletBalance": lambda db, args: ToolAPIs.get_wallet_balance(db, args["merchantId"]),
+    "getOldDigipayBalance": lambda db, args: ToolAPIs.get_old_digipay_balance(db, args["merchantId"]),
+    "getDaywiseReport": lambda db, args: ToolAPIs.get_daywise_report(db, args["merchantId"], args.get("yearMonth", "2026 June"), args.get("day")),
+    "getTxnLogs": lambda db, args: ToolAPIs.get_txn_logs(db, args["merchantId"], args.get("fromDate", "2026-01-01"), args.get("toDate", "2026-12-31")),
+    "getKYCStatus": lambda db, args: ToolAPIs.get_kyc_status(db, args["merchantId"]),
+    "getSettlementStatus": lambda db, args: ToolAPIs.get_settlement_status(db, args["txnId"]),
+    "getBankAccount": lambda db, args: ToolAPIs.get_bank_account(db, args["merchantId"]),
+    "getMerchant": lambda db, args: ToolAPIs.get_merchant(db, args["merchantId"]),
+    "getAEPSStatus": lambda db, args: ToolAPIs.get_aeps_status(db, args["txnId"]),
+    "getMATMStatus": lambda db, args: ToolAPIs.get_matm_status(db, args["txnId"]),
+    "raiseTicket": lambda db, args: ToolAPIs.raise_ticket(db, args["merchantId"], args["category"], args["details"]),
+    "closeTicket": lambda db, args: ToolAPIs.close_ticket(db, args["ticketId"]),
+    "refundEligibility": lambda db, args: ToolAPIs.check_refund_eligibility(db, args["txnId"]),
+    "generateStatement": lambda db, args: ToolAPIs.generate_statement(db, args["merchantId"], args["fromDate"], args["toDate"]),
+}
+
 async def tool_executor_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     """
     Executes tools that were selected by the specialists.
@@ -282,36 +300,9 @@ async def tool_executor_node(state: AgentState, config: RunnableConfig) -> Dict[
         args = tool["args"]
         logger.info(f"Executing tool {name} with args: {args}")
         try:
-            if name == "getTransaction":
-                res = await ToolAPIs.get_transaction(db, args["txnId"])
-            elif name == "getWalletBalance":
-                res = await ToolAPIs.get_wallet_balance(db, args["merchantId"])
-            elif name == "getOldDigipayBalance":
-                res = await ToolAPIs.get_old_digipay_balance(db, args["merchantId"])
-            elif name == "getDaywiseReport":
-                res = await ToolAPIs.get_daywise_report(db, args["merchantId"], args.get("yearMonth", "2026 June"), args.get("day"))
-            elif name == "getTxnLogs":
-                res = await ToolAPIs.get_txn_logs(db, args["merchantId"], args.get("fromDate", "2026-01-01"), args.get("toDate", "2026-12-31"))
-            elif name == "getKYCStatus":
-                res = await ToolAPIs.get_kyc_status(db, args["merchantId"])
-            elif name == "getSettlementStatus":
-                res = await ToolAPIs.get_settlement_status(db, args["txnId"])
-            elif name == "getBankAccount":
-                res = await ToolAPIs.get_bank_account(db, args["merchantId"])
-            elif name == "getMerchant":
-                res = await ToolAPIs.get_merchant(db, args["merchantId"])
-            elif name == "getAEPSStatus":
-                res = await ToolAPIs.get_aeps_status(db, args["txnId"])
-            elif name == "getMATMStatus":
-                res = await ToolAPIs.get_matm_status(db, args["txnId"])
-            elif name == "raiseTicket":
-                res = await ToolAPIs.raise_ticket(db, args["merchantId"], args["category"], args["details"])
-            elif name == "closeTicket":
-                res = await ToolAPIs.close_ticket(db, args["ticketId"])
-            elif name == "refundEligibility":
-                res = await ToolAPIs.check_refund_eligibility(db, args["txnId"])
-            elif name == "generateStatement":
-                res = await ToolAPIs.generate_statement(db, args["merchantId"], args["fromDate"], args["toDate"])
+            handler = TOOL_DISPATCHER.get(name)
+            if handler:
+                res = await handler(db, args)
             else:
                 res = {"error": f"Tool '{name}' is not recognized."}
             outcomes.append({"tool": name, "status": "SUCCESS", "result": res})

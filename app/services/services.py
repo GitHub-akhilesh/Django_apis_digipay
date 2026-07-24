@@ -55,6 +55,14 @@ class DigipayService:
 
         # Determine transaction filter by type/category
         type_filter_clause = "type NOT IN ('Bio Auth', 'Bio auth', 'Cash Deposit Advice(Cash Deposit)')"
+        params = {
+            "csc_id": csc_id,
+            "from_date": from_datetime,
+            "to_date": to_datetime,
+            "limit": rpp,
+            "offset": offset
+        }
+
         if txn_type and txn_type != "ALL":
             if txn_type == "AEPS_CASH_WITHDRAWAL":
                 type_filter_clause += " AND (category = 'AEPS' AND type = 'Cash Withdrawal')"
@@ -65,16 +73,8 @@ class DigipayService:
             elif txn_type == "DSP_TOPUP":
                 type_filter_clause += " AND (category = 'DSP_TOPUP' OR type = 'DSP Topup')"
             else:
-                type_filter_clause += f" AND (category = '{txn_type}' OR type = '{txn_type}')"
-
-        search_clause = ""
-        params = {
-            "csc_id": csc_id,
-            "from_date": from_datetime,
-            "to_date": to_datetime,
-            "limit": rpp,
-            "offset": offset
-        }
+                type_filter_clause += " AND (category = :txn_type_filter OR type = :txn_type_filter)"
+                params["txn_type_filter"] = str(txn_type)
 
         if search_query:
             search_clause = "AND (txn_id LIKE :search OR rrn LIKE :search OR mobile LIKE :search OR memo LIKE :search)"

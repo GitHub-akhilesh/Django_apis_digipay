@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     INTERNAL_CLIENTS: str = "WALLET_SERVICE,PASSBOOK_SERVICE,LOG_SERVICE"
     INTERNAL_BYPASS_SECRET: str = "NPCI_INT3RNAL_Bypass_Secr3t_2026!" # Shared secret to protect bypass from spoofing
 
+    # Download & Storage Service Base URL
+    DOWNLOAD_BASE_URL: str = "http://127.0.0.1:8000/api/v1"
+
     model_config = SettingsConfigDict(
         env_file=(
             os.path.join(BASE_DIR, ".env.prod"),

@@ -134,15 +134,16 @@ class ToolAPIs:
     async def get_daywise_report(db: AsyncSession, merchant_id: str, year_month: str = "2026 June", day: Optional[str] = None) -> Dict[str, Any]:
         """Fetch daywise report archive for a merchant."""
         logger.info(f"Tool API: get_daywise_report(merchant_id={merchant_id}, year_month={year_month}, day={day})")
-        mock_url = f"http://10.1.76.194/api/v1/daywise_report?year_month={year_month}"
+        from app.config import settings
+        download_url = f"{settings.DOWNLOAD_BASE_URL}/daywise_report?year_month={year_month}"
         if day:
-            mock_url += f"&day={day}"
+            download_url += f"&day={day}"
         return {
             "merchantId": merchant_id,
             "yearMonth": year_month,
             "day": day,
             "status": "READY",
-            "downloadUrl": mock_url
+            "downloadUrl": download_url
         }
 
     @staticmethod
@@ -459,8 +460,9 @@ class ToolAPIs:
             total_records = 0
             records = []
 
+        from app.config import settings
         total_volume = sum(float(r.get("lgrAmt") or r.get("amount") or 0.0) for r in records)
-        mock_file_url = f"http://10.1.76.194/api/v1/statements/stmt_{merchant_id}_{from_date}_to_{to_date}.pdf"
+        download_file_url = f"{settings.DOWNLOAD_BASE_URL}/statements/stmt_{merchant_id}_{from_date}_to_{to_date}.pdf"
 
         return {
             "merchantId": merchant_id,
@@ -468,6 +470,6 @@ class ToolAPIs:
             "toDate": to_dt.strftime("%Y-%m-%d"),
             "totalTransactions": total_records,
             "totalVolume": total_volume,
-            "downloadUrl": mock_file_url,
+            "downloadUrl": download_file_url,
             "sampleRecords": records[:3]
         }

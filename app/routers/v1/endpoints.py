@@ -68,7 +68,7 @@ async def get_transaction_logs(
         logger.error(f"Error fetching txn logs: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail="Unable to fetch transaction logs. Please verify parameters and try again."
         )
 
 @router.post("/passbook", response_model=EnvelopedResponse)
@@ -98,7 +98,7 @@ async def get_passbook(
         logger.error(f"Error fetching passbook: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail="Unable to fetch passbook records. Please verify parameters and try again."
         )
 
 
