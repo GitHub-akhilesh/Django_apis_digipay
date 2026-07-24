@@ -23,7 +23,7 @@ if settings.ENV == "TEST":
     DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 elif os.getenv("DATABASE_URL"):
     DATABASE_URL = os.getenv("DATABASE_URL")
-elif settings.DB_HOST and settings.DB_HOST != "127.0.0.1":
+elif settings.DB_HOST:
     encoded_pass = urllib.parse.quote_plus(settings.DB_PASSWORD or "")
     DATABASE_URL = f"mysql+aiomysql://{settings.DB_USER}:{encoded_pass}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
 else:
