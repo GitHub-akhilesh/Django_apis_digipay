@@ -139,35 +139,44 @@ def calculate_net_txn_amount(amount: float, commission: float, tds: float) -> fl
     return float(amount) - float(commission) + float(tds)
 
 
-def format_txn_memo(memo: Optional[str]) -> str:
-    if not memo:
+def format_txn_memo(
+    raw_memo: Optional[str] = None,
+    category: Optional[str] = None,
+    txn_type: Optional[str] = None,
+    remarks: Optional[str] = None,
+    memo: Optional[str] = None
+) -> str:
+    target_memo = raw_memo or memo or remarks
+    if not target_memo or str(target_memo).strip() in ("", "None", "null"):
+        if category and txn_type:
+            return f"{category} - {txn_type}"
         return "00 - Success"
-    memo_str = str(memo).strip()
+    memo_str = str(target_memo).strip()
+    if remarks and remarks not in memo_str:
+        return f"{memo_str} ({remarks})"
     return memo_str
 
 
-def update_running_balance(transaction_data: dict, logs_list: list, balance_update_at, running_balance: float) -> float:
+def update_running_balance(
+    running_balance_or_data: Any,
+    amt_or_logs: Any = None,
+    txn_type_or_up_at: Any = None,
+    running_balance: Optional[float] = None
+) -> float:
+    if isinstance(running_balance_or_data, (int, float)):
+        curr_bal = float(running_balance_or_data)
+        amt = float(amt_or_logs or 0.0)
+        txn_type = str(txn_type_or_up_at or "").lower()
+        if "withdrawal" in txn_type or "payout" in txn_type or "debit" in txn_type:
+            return curr_bal - amt
+        return curr_bal + amt
+
+    transaction_data = running_balance_or_data if isinstance(running_balance_or_data, dict) else {}
+    logs_list = amt_or_logs if isinstance(amt_or_logs, list) else []
+    curr_bal = float(running_balance or 0.0)
     amt = float(transaction_data.get('amount') or 0.0)
-    tx_date = transaction_data.get('date')
-
-    if balance_update_at is not None and isinstance(tx_date, (datetime.datetime, str)):
-        try:
-            if isinstance(tx_date, str):
-                tx_date_dt = datetime.datetime.strptime(tx_date.split(".")[0], "%Y-%m-%d %H:%M:%S")
-            else:
-                tx_date_dt = tx_date
-            if isinstance(balance_update_at, str):
-                bal_up_dt = datetime.datetime.strptime(balance_update_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
-            else:
-                bal_up_dt = balance_update_at
-
-            if tx_date_dt < bal_up_dt:
-                running_balance -= amt
-        except Exception:
-            running_balance -= amt
-    else:
-        running_balance -= amt
-
-    transaction_data['debit_credit'] = "Credit" if amt > 0 else "Debit"
-    logs_list.append(transaction_data)
-    return running_balance
+    curr_bal -= amt
+    if isinstance(transaction_data, dict):
+        transaction_data['debit_credit'] = "Credit" if amt > 0 else "Debit"
+        logs_list.append(transaction_data)
+    return curr_bal
