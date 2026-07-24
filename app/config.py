@@ -48,8 +48,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=(
-            os.path.join(BASE_DIR, ".env.local"),
             os.path.join(BASE_DIR, ".env.prod"),
+            os.path.join(BASE_DIR, ".env.local"),
             os.path.join(BASE_DIR, ".env")
         ),
         env_file_encoding="utf-8",
