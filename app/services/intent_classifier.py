@@ -111,14 +111,14 @@ class IntentClassifier:
             if entity_id:
                 tool_calls.append({"name": ToolName.GET_SETTLEMENT_STATUS.value, "args": {"txnId": entity_id}})
             else:
-                from_date, to_date, is_explicit = IntentClassifier._extract_date_range(last_msg)
-                args = {"merchantId": csc_id}
-                if is_explicit:
-                    args["fromDate"] = from_date
-                    args["toDate"] = to_date
+                from_date, to_date, _ = IntentClassifier._extract_date_range(last_msg)
                 tool_calls.append({
                     "name": ToolName.GET_WALLET_BALANCE.value,
-                    "args": args
+                    "args": {
+                        "merchantId": csc_id,
+                        "fromDate": from_date,
+                        "toDate": to_date
+                    }
                 })
                 confidence = 0.95
         elif any(k in msg_lower for k in ["transaction", "where is my money", "failed", "status of"]):

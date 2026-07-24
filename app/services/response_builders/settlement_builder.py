@@ -1,4 +1,5 @@
 from typing import Dict, Any
+from datetime import datetime, timedelta
 
 class SettlementResponseBuilder:
     @staticmethod
@@ -18,5 +19,8 @@ class SettlementResponseBuilder:
         amt = float(res.get("lastSettlementAmount") or res.get("amount") or 0.0)
         from_date = res.get("fromDate")
         to_date = res.get("toDate")
-        range_suffix = f" (Period: {from_date} to {to_date})" if from_date and to_date else ""
-        return f"Your last settlement was processed on {date_str} for ₹{amt:.2f}.{range_suffix}"
+        if not from_date or not to_date:
+            now = datetime.now()
+            from_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+            to_date = now.strftime("%Y-%m-%d")
+        return f"Your last settlement was processed on {date_str} for ₹{amt:.2f}. (Period: {from_date} to {to_date})"
