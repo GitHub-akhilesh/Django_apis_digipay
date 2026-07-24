@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.domain import WalletSnapshotService
+from app.repositories.settlement_repo import SettlementRepository
 
 logger = logging.getLogger("digipay")
 
@@ -19,13 +20,26 @@ class WalletTool:
         snapshot = await WalletSnapshotService.get_wallet_snapshot(db, merchant_id)
         start = fromDate or from_date
         end = toDate or to_date
+
+        last_settlement_date = snapshot.last_settlement_date
+        last_settlement_amount = snapshot.last_settlement_amount
+
+        if start and end:
+            period_payout = await SettlementRepository.get_last_payout_from_transactions(db, merchant_id, start, end)
+            if period_payout:
+                last_settlement_date = period_payout.get("date")
+                last_settlement_amount = period_payout.get("amount", 0.0)
+            else:
+                last_settlement_date = None
+                last_settlement_amount = 0.0
+
         return {
             "merchantId": snapshot.merchant_id,
             "balance": snapshot.active_balance,
             "oldDigipayBalance": snapshot.legacy_balance,
             "blockedBalance": snapshot.blocked_balance,
-            "lastSettlementDate": snapshot.last_settlement_date,
-            "lastSettlementAmount": snapshot.last_settlement_amount,
+            "lastSettlementDate": last_settlement_date,
+            "lastSettlementAmount": last_settlement_amount,
             "fromDate": start,
             "toDate": end
         }
