@@ -5,9 +5,10 @@
 
 class DigiPayChatSDK {
   constructor(options = {}) {
-    let rawUrl = (options.baseUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://10.1.76.194')).replace(/:8000\/?$/, '').replace(/\/$/, '');
-    if (rawUrl.includes('localhost:5173') || rawUrl.includes('127.0.0.1:5173')) {
-      rawUrl = 'http://10.1.76.194';
+    let rawUrl = options.baseUrl || options.apiUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000');
+    rawUrl = rawUrl.replace(/\/$/, '');
+    if (rawUrl.includes(':5173')) {
+      rawUrl = rawUrl.replace(':5173', ':8000');
     }
     this.baseUrl = rawUrl;
     this.cscId = options.cscId || '500100100014';
