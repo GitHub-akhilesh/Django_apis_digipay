@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.future import select
 from app.models.models import Transaction
 from app.repositories.base_repo import BaseRepository
+from app.utils.validation_utils import get_ledger_table_name
 
 logger = logging.getLogger("digipay")
 
@@ -93,3 +94,82 @@ class TransactionRepository(BaseRepository[Transaction]):
             records = []
 
         return total_records, records
+
+    async def fetch_passbook_logs(
+        self,
+        db: AsyncSession,
+        csc_id: str,
+        from_datetime: datetime.datetime,
+        to_datetime: datetime.datetime,
+        search_query: str,
+        rpp: int,
+        cp: int
+    ) -> Tuple[int, List[Dict[str, Any]]]:
+        table_name = get_ledger_table_name(csc_id)
+        offset = (cp - 1) * rpp
+
+        params = {
+            "csc_id": csc_id,
+            "from_date": from_datetime.strftime("%Y-%m-%d"),
+            "to_date": to_datetime.strftime("%Y-%m-%d"),
+            "limit": rpp,
+            "offset": offset
+        }
+
+        search_clause = ""
+        if search_query:
+            search_clause = "AND (cscTxn LIKE :search OR merchantTxn LIKE :search OR remarks LIKE :search)"
+            params["search"] = f"%{search_query}%"
+
+        count_sql = f"""
+            SELECT COUNT(*)
+            FROM {table_name}
+            WHERE cscId = :csc_id
+              AND txnDate BETWEEN :from_date AND :to_date
+              {search_clause}
+        """
+
+        fetch_sql = f"""
+            SELECT *
+            FROM {table_name}
+            WHERE cscId = :csc_id
+              AND txnDate BETWEEN :from_date AND :to_date
+              {search_clause}
+            ORDER BY sno DESC
+            LIMIT :limit OFFSET :offset
+        """
+
+        try:
+            count_res = await db.execute(text(count_sql), params)
+            total_records = count_res.scalar() or 0
+            if total_records > 0:
+                res = await db.execute(text(fetch_sql), params)
+                rows = res.mappings().all()
+                ledger_records = []
+                for r in rows:
+                    r_dict = dict(r)
+                    ledger_records.append({
+                        "txn_id": r_dict.get("merchantTxn") or r_dict.get("cscTxn", ""),
+                        "rrn": r_dict.get("isoRrn", ""),
+                        "amount": float(r_dict.get("walletTxnAmount") or r_dict.get("txnAmount") or 0.0),
+                        "type": r_dict.get("txnType") or "Transaction",
+                        "category": str(r_dict.get("categoryId") or "AEPS"),
+                        "memo": r_dict.get("remarks", ""),
+                        "status": "SUCCESS" if r_dict.get("flag") == 0 or not r_dict.get("status") else str(r_dict.get("status")),
+                        "date": str(r_dict.get("creationDate") or r_dict.get("txnDate") or ""),
+                        "running_balance": float(r_dict.get("walletBalance") or 0.0)
+                    })
+                return total_records, ledger_records
+        except Exception as e:
+            logger.info(f"Ledger table {table_name} query fallback to transactions table for {csc_id}: {e}")
+
+        return await self.fetch_txn_logs(
+            db=db,
+            csc_id=csc_id,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+            search_query=search_query,
+            rpp=rpp,
+            cp=cp,
+            txn_type="ALL"
+        )

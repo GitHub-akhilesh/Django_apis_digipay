@@ -26,15 +26,14 @@ class PassbookService:
         from_datetime = datetime.datetime.combine(from_date, datetime.time.min)
         to_datetime = datetime.datetime.combine(to_date, datetime.time.max)
 
-        total_records, raw_records = await txn_repo.fetch_txn_logs(
+        total_records, raw_records = await txn_repo.fetch_passbook_logs(
             db=db,
             csc_id=csc_id,
             from_datetime=from_datetime,
             to_datetime=to_datetime,
             search_query=search_query,
             rpp=rpp,
-            cp=cp,
-            txn_type="ALL"
+            cp=cp
         )
 
         total_pages = math.ceil(total_records / rpp) if total_records > 0 else 1
