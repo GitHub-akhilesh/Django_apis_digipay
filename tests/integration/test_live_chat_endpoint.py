@@ -18,4 +18,4 @@ async def test_live_chat_endpoint():
         )
         dummy_http_req = DummyRequest()
         res = await chat_with_agent(req, dummy_http_req, db)
-        assert res["status"] == "OK"
+        assert res.status == "OK"

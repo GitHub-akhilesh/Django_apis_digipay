@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from sqlalchemy.future import select
 from app.models.models import Wallet, Transaction
 from app.repositories.base_repo import BaseRepository
@@ -44,8 +44,8 @@ class WalletRepository(BaseRepository[Wallet]):
                 FROM transactions 
                 WHERE status IN ('SUCCESS', 'INITIATED') AND user_id IN :u_ids
                 GROUP BY user_id
-            """)
-            res = await db.execute(stmt, {"u_ids": tuple(user_ids)})
+            """).bindparams(bindparam("u_ids", expanding=True))
+            res = await db.execute(stmt, {"u_ids": list(user_ids)})
             return {row[0]: f"{float(row[1]):.2f}" for row in res.fetchall()}
         except Exception as e:
             logger.error(f"Error calculating ledger balances: {e}")

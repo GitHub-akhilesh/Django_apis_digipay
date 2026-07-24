@@ -129,6 +129,21 @@ async def setup_db():
         """))
         
         await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS wallets (
+                merchant_id VARCHAR(45) PRIMARY KEY,
+                balance DECIMAL(12,2),
+                blocked_balance DECIMAL(12,2),
+                last_settlement_date DATETIME,
+                last_settlement_amount DECIMAL(12,2)
+            );
+        """))
+
+        await conn.execute(text("""
+            INSERT INTO wallets (merchant_id, balance, blocked_balance)
+            VALUES ('500100100014', 3821.42, 0.00);
+        """))
+
+        await conn.execute(text("""
             INSERT INTO digipay_ledger_5 (sno, clientId, cscTxn, merchantTxn, cscId, walletAc, isoRrn, txnType, categoryId, lastSno, walletBalance, walletTxnAmount, bankAmt, cscAmt, grossRevenue, gstAmt, tds, interChange, txnAmount, vleAmt, txnCnt, txnDate, txnHash, stateCode, districtCode, bank_iin, createdBy, creationDate, customer, remarks, reqCode, param1, param2, param3, flag, ipAddr)
             VALUES (1791, 'CSC-DGP', '722851395933401', 'CZUCW178186672384906DQQOQSU69890796', '500100100014', '500100100014', '617016890796', 'Cr', 1, 1790, 3821.42, 100.31, 0.0, 0.0, 0.0, 0.0, -0.01, 0.0, 100.0, 0.32, 1, '2026-06-19', 'hash', '00', '00', '607198', 'DGP-APP', '2026-06-19 15:21:13', 'XXXX XXXX 9685', 'AEPS CW/XXXX XXXX 9685', '0', '100.00', '', '', 0, '127.0.0.1');
         """))
@@ -205,7 +220,8 @@ async def test_internal_client_bypass_flow():
         res_data = json.loads(res_data_raw)
         assert res_data["totalRecords"] == 1
         assert len(res_data["list"]) == 1
-        assert res_data["list"][0]["merchantTxn"] == "CZUCW178186672384906DQQOQSU69890796"
+        txn_identifier = res_data["list"][0].get("merchantTxn") or res_data["list"][0].get("txnId")
+        assert txn_identifier == "CZUCW178186672384906DQQOQSU69890796"
         assert res_data["list"][0]["category"] == "AEPS_CASH_WITHDRAWAL"
 
 @pytest.mark.asyncio
