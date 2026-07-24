@@ -54,6 +54,7 @@ class IntentClassifier:
     @staticmethod
     def classify_intent(last_msg: str, csc_id: str) -> Dict[str, Any]:
         msg_lower = last_msg.lower()
+        from_date, to_date, is_explicit = IntentClassifier._extract_date_range(last_msg)
         txn_id_match = re.search(r'(CZU[A-Z0-9]+|TKT-[A-Z0-9]+)', last_msg, re.IGNORECASE)
         entity_id = txn_id_match.group(1) if txn_id_match else None
 
@@ -69,7 +70,6 @@ class IntentClassifier:
             tool_calls.append({"name": ToolName.GET_WALLET_BALANCE.value, "args": {"merchantId": csc_id}})
         elif any(k in msg_lower for k in ["txn logs", "transaction logs", "logs", "last txn", "last transaction", "transactions", "old system txn", "old system transaction", "txn"]):
             intent = "Wallet"
-            from_date, to_date, _ = IntentClassifier._extract_date_range(last_msg)
             tool_calls.append({
                 "name": ToolName.GET_TXN_LOGS.value,
                 "args": {
@@ -82,7 +82,6 @@ class IntentClassifier:
             })
         elif any(k in msg_lower for k in ["statement", "report", "passbook", "history"]):
             intent = "Wallet"
-            from_date, to_date, _ = IntentClassifier._extract_date_range(last_msg)
             tool_calls.append({
                 "name": ToolName.GENERATE_STATEMENT.value,
                 "args": {
@@ -106,21 +105,28 @@ class IntentClassifier:
                 tool_calls.append({"name": ToolName.REFUND_ELIGIBILITY.value, "args": {"txnId": entity_id}})
             else:
                 confidence = 0.6
-        elif any(k in msg_lower for k in ["settlement", "last settlement"]):
+        elif any(k in msg_lower for k in ["settlement", "last settlement"]) or (is_explicit and not any(k in msg_lower for k in ["kyc", "bank", "ticket", "refund", "aeps", "matm", "old digipay", "old balance"])):
             intent = "Settlement"
             if entity_id:
                 tool_calls.append({"name": ToolName.GET_SETTLEMENT_STATUS.value, "args": {"txnId": entity_id}})
             else:
-                from_date, to_date, _ = IntentClassifier._extract_date_range(last_msg)
-                tool_calls.append({
-                    "name": ToolName.GET_WALLET_BALANCE.value,
-                    "args": {
-                        "merchantId": csc_id,
-                        "fromDate": from_date,
-                        "toDate": to_date
+                if is_explicit:
+                    tool_calls.append({
+                        "name": ToolName.GET_WALLET_BALANCE.value,
+                        "args": {
+                            "merchantId": csc_id,
+                            "fromDate": from_date,
+                            "toDate": to_date
+                        }
+                    })
+                    confidence = 0.95
+                else:
+                    return {
+                        "intent": "Settlement",
+                        "confidence_score": 0.95,
+                        "tool_calls": [],
+                        "clarification_prompt": "Please specify the From Date and To Date (e.g., YYYY-MM-DD or DD-MM-YYYY) for which you would like to view your settlement details."
                     }
-                })
-                confidence = 0.95
         elif any(k in msg_lower for k in ["transaction", "where is my money", "failed", "status of"]):
             intent = "Refund"
             if entity_id:

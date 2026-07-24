@@ -25,10 +25,15 @@ def test_intent_classifier_wallet_balance_locked():
     assert res["tool_calls"][0]["name"] == ToolName.GET_WALLET_BALANCE.value
 
 def test_intent_classifier_settlement_and_txn_logs():
-    res_settle = IntentClassifier.classify_intent("Check my last settlement", "500100100014")
+    res_prompt = IntentClassifier.classify_intent("Check my last settlement", "500100100014")
+    assert res_prompt["intent"] == "Settlement"
+    assert "From Date and To Date" in res_prompt["clarification_prompt"]
+
+    res_settle = IntentClassifier.classify_intent("Check my settlement from 2026-06-01 to 2026-06-30", "500100100014")
     assert res_settle["intent"] == "Settlement"
     assert res_settle["confidence_score"] == 0.95
     assert res_settle["tool_calls"][0]["name"] == ToolName.GET_WALLET_BALANCE.value
+    assert res_settle["tool_calls"][0]["args"]["fromDate"] == "2026-06-01"
 
     res_txns = IntentClassifier.classify_intent("what are my last txn of old system and related to it", "500100100014")
     assert res_txns["intent"] == "Wallet"

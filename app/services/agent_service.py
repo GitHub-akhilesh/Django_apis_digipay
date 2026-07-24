@@ -43,7 +43,12 @@ async def _exec_get_transaction(db: AsyncSession, args: Dict[str, Any]) -> Dict[
     return await ToolAPIs.get_transaction(db, args["txnId"])
 
 async def _exec_get_wallet_balance(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await ToolAPIs.get_wallet_balance(db, args["merchantId"])
+    return await ToolAPIs.get_wallet_balance(
+        db,
+        args["merchantId"],
+        fromDate=args.get("fromDate"),
+        toDate=args.get("toDate")
+    )
 
 async def _exec_get_old_digipay_balance(db: AsyncSession, args: Dict[str, Any]) -> Dict[str, Any]:
     return await ToolAPIs.get_old_digipay_balance(db, args["merchantId"])
@@ -122,12 +127,15 @@ async def intent_router_node(state: AgentState) -> Dict[str, Any]:
     else:
         current_agent = "GeneralAgent"
         
-    return {
+    res = {
         "intent": intent,
         "confidence_score": confidence,
         "current_agent": current_agent,
-        "tool_calls": simulation["tool_calls"]
+        "tool_calls": simulation.get("tool_calls", [])
     }
+    if simulation.get("clarification_prompt"):
+        res["response"] = simulation["clarification_prompt"]
+    return res
 
 async def specialist_agent_node(state: AgentState) -> Dict[str, Any]:
     """Step 2 & 3: Specialist Agent."""
@@ -253,6 +261,8 @@ async def response_agent_node(state: AgentState) -> Dict[str, Any]:
         return {"response": response}
         
     if not outcomes:
+        if state.get("response"):
+            return {"response": mask_pii(state["response"])}
         if state["confidence_score"] < 0.6:
             response = (
                 "I'm sorry, I'm not completely sure how to assist with that transaction or request. "
