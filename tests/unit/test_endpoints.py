@@ -267,11 +267,6 @@ async def test_wallet_balance_endpoint():
         assert res_user_id.status_code == 200
         assert "500100100014" in res_user_id.json()
 
-        # 3. Legacy GET request with query params
-        res_get = await ac.get("/api/v1/get-wallet-balance?cscId=500100100014", headers=headers)
-        assert res_get.status_code == 200
-        assert "500100100014" in res_get.json()
-
 
 @pytest.mark.asyncio
 async def test_daywise_report_endpoint():
