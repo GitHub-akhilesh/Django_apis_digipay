@@ -46,13 +46,14 @@ class IntentClassifier:
                 tool_calls.append({"name": ToolName.GET_TRANSACTION.value, "args": {"txnId": entity_id}})
             else:
                 confidence = 0.5
-        elif any(k in msg_lower for k in ["settlement"]):
+        elif any(k in msg_lower for k in ["settlement", "last settlement"]):
             intent = "Settlement"
             if entity_id:
                 tool_calls.append({"name": ToolName.GET_SETTLEMENT_STATUS.value, "args": {"txnId": entity_id}})
             else:
-                confidence = 0.5
-        elif any(k in msg_lower for k in ["txn logs", "transaction logs", "logs"]):
+                tool_calls.append({"name": ToolName.GET_WALLET_BALANCE.value, "args": {"merchantId": csc_id}})
+                confidence = 0.95
+        elif any(k in msg_lower for k in ["txn logs", "transaction logs", "logs", "last txn", "last transaction", "transactions", "old system txn", "old system transaction", "txn"]):
             intent = "Wallet"
             from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
             to_date = datetime.now().strftime("%Y-%m-%d")
@@ -61,7 +62,9 @@ class IntentClassifier:
                 "args": {
                     "merchantId": csc_id,
                     "fromDate": from_date,
-                    "toDate": to_date
+                    "toDate": to_date,
+                    "rpp": 10,
+                    "cp": 1
                 }
             })
         elif any(k in msg_lower for k in ["statement", "report", "passbook", "history"]):

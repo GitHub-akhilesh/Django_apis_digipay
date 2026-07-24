@@ -24,6 +24,17 @@ def test_intent_classifier_wallet_balance_locked():
     assert res["intent"] == "Wallet"
     assert res["tool_calls"][0]["name"] == ToolName.GET_WALLET_BALANCE.value
 
+def test_intent_classifier_settlement_and_txn_logs():
+    res_settle = IntentClassifier.classify_intent("Check my last settlement", "500100100014")
+    assert res_settle["intent"] == "Settlement"
+    assert res_settle["confidence_score"] == 0.95
+    assert res_settle["tool_calls"][0]["name"] == ToolName.GET_WALLET_BALANCE.value
+
+    res_txns = IntentClassifier.classify_intent("what are my last txn of old system and related to it", "500100100014")
+    assert res_txns["intent"] == "Wallet"
+    assert res_txns["tool_calls"][0]["name"] == ToolName.GET_TXN_LOGS.value
+    assert res_txns["tool_calls"][0]["args"]["rpp"] == 10
+
 def test_response_builder_registry():
     wallet_res = {
         "merchantId": "500100100014",

@@ -17,7 +17,20 @@ class TransactionResponseBuilder:
 
     @staticmethod
     def format_txn_logs(res: Dict[str, Any]) -> str:
-        return f"Retrieved {res.get('totalRecords', 0)} transaction log(s) for your account between {res.get('fromDate')} and {res.get('toDate')}."
+        logs = res.get("data") or res.get("logs") or res.get("transactions") or []
+        if not logs:
+            return f"No transaction logs found for your account between {res.get('fromDate')} and {res.get('toDate')}."
+        
+        display_logs = logs[:10]
+        lines = [f"Here are your last {len(display_logs)} transaction log(s) (Total records: {res.get('totalRecords', len(logs))}):"]
+        for idx, item in enumerate(display_logs, 1):
+            txn_id = item.get("txnId") or item.get("txn_id") or "N/A"
+            amt = float(item.get("amount") or item.get("lgrAmt") or 0.0)
+            st = item.get("status", "SUCCESS")
+            type_str = item.get("type") or item.get("category") or "Txn"
+            dt = item.get("created_at") or item.get("date") or "N/A"
+            lines.append(f"{idx}. [{type_str}] Amount: ₹{amt:.2f} | Status: {st} | Txn ID: {txn_id} | Date: {dt}")
+        return "\n".join(lines)
 
     @staticmethod
     def format_statement(res: Dict[str, Any]) -> str:
