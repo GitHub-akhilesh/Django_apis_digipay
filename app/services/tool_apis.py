@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Dict, List, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 from sqlalchemy.future import select
 from app.models.models import Transaction, Merchant, KYC, Wallet, Settlement, Ticket
 
@@ -46,23 +47,143 @@ class ToolAPIs:
 
     @staticmethod
     async def get_wallet_balance(db: AsyncSession, merchant_id: str) -> Dict[str, Any]:
-        """Check wallet balance for merchant. Returns balance, blocked balance, last settlement."""
+        """Check wallet balance for merchant. Returns balance, blocked balance, old digipay balance, last settlement."""
         logger.info(f"Tool API: get_wallet_balance(merchant_id={merchant_id})")
         from app.services.services import DigipayService
         
+        # 1. Check DigipayUsers table for active/legacy balance
+        user_bal = 0.0
+        try:
+            u_stmt = text("SELECT wallet_balance FROM DigipayUsers WHERE user_id = :m")
+            u_res = await db.execute(u_stmt, {"m": merchant_id})
+            u_row = u_res.fetchone()
+            if u_row and u_row[0] is not None:
+                user_bal = float(u_row[0])
+        except Exception as e:
+            logger.warning(f"Note: DigipayUsers lookup for {merchant_id}: {e}")
+
+        # 2. Calculate from transactions table via DigipayService
         balances_dict = await DigipayService.get_wallet_balances(db, [merchant_id])
         ledger_bal_str = balances_dict.get(merchant_id, "0.00")
         try:
-            ledger_balance = float(ledger_bal_str)
+            calc_balance = float(ledger_bal_str)
         except (ValueError, TypeError):
-            ledger_balance = 0.0
+            calc_balance = 0.0
+
+        # 3. Check optional Wallet table safely
+        wallet_bal = None
+        blocked_balance = 0.0
+        last_settlement_date = None
+        last_settlement_amount = 0.0
+        try:
+            wallet_stmt = select(Wallet).where(Wallet.merchant_id == merchant_id)
+            wallet_res = await db.execute(wallet_stmt)
+            wallet = wallet_res.scalar_one_or_none()
+            if wallet and wallet.balance is not None:
+                wallet_bal = float(wallet.balance)
+                blocked_balance = float(wallet.blocked_balance or 0.0)
+                last_settlement_date = wallet.last_settlement_date.strftime("%Y-%m-%d %H:%M:%S") if wallet.last_settlement_date else None
+                last_settlement_amount = float(wallet.last_settlement_amount or 0.0)
+        except Exception:
+            pass
+
+        active_balance = wallet_bal if wallet_bal is not None else (user_bal if user_bal != 0.0 else calc_balance)
+        old_digipay_balance = user_bal if user_bal != 0.0 else calc_balance
 
         return {
             "merchantId": merchant_id,
-            "balance": ledger_balance,
-            "blockedBalance": 0.0,
-            "lastSettlementDate": None,
-            "lastSettlementAmount": 0.0
+            "balance": active_balance,
+            "oldDigipayBalance": old_digipay_balance,
+            "blockedBalance": blocked_balance,
+            "lastSettlementDate": last_settlement_date,
+            "lastSettlementAmount": last_settlement_amount
+        }
+
+    @staticmethod
+    async def get_old_digipay_balance(db: AsyncSession, merchant_id: str) -> Dict[str, Any]:
+        """Check old DigiPay / legacy balance for merchant."""
+        logger.info(f"Tool API: get_old_digipay_balance(merchant_id={merchant_id})")
+        from app.services.services import DigipayService
+        
+        user_bal = 0.0
+        try:
+            u_stmt = text("SELECT wallet_balance FROM DigipayUsers WHERE user_id = :m")
+            u_res = await db.execute(u_stmt, {"m": merchant_id})
+            u_row = u_res.fetchone()
+            if u_row and u_row[0] is not None:
+                user_bal = float(u_row[0])
+        except Exception:
+            pass
+
+        balances_dict = await DigipayService.get_wallet_balances(db, [merchant_id])
+        ledger_bal_str = balances_dict.get(merchant_id, "0.00")
+        try:
+            calc_balance = float(ledger_bal_str)
+        except (ValueError, TypeError):
+            calc_balance = 0.0
+
+        old_balance = user_bal if user_bal != 0.0 else calc_balance
+
+        return {
+            "merchantId": merchant_id,
+            "oldDigipayBalance": old_balance,
+            "status": "OK"
+        }
+
+    @staticmethod
+    async def get_daywise_report(db: AsyncSession, merchant_id: str, year_month: str = "2026 June", day: Optional[str] = None) -> Dict[str, Any]:
+        """Fetch daywise report archive for a merchant."""
+        logger.info(f"Tool API: get_daywise_report(merchant_id={merchant_id}, year_month={year_month}, day={day})")
+        mock_url = f"http://10.1.76.194/api/v1/daywise_report?year_month={year_month}"
+        if day:
+            mock_url += f"&day={day}"
+        return {
+            "merchantId": merchant_id,
+            "yearMonth": year_month,
+            "day": day,
+            "status": "READY",
+            "downloadUrl": mock_url
+        }
+
+    @staticmethod
+    async def get_txn_logs(db: AsyncSession, merchant_id: str, from_date: str, to_date: str, txn_type: str = "ALL", search: str = "") -> Dict[str, Any]:
+        """Fetch transaction logs for a merchant."""
+        logger.info(f"Tool API: get_txn_logs(merchant_id={merchant_id})")
+        from app.services.services import DigipayService
+        from app.utils.helpers import parse_date
+        import base64, json
+
+        try:
+            from_dt = parse_date(from_date)
+            to_dt = parse_date(to_date)
+        except Exception:
+            to_dt = datetime.date.today()
+            from_dt = to_dt - datetime.timedelta(days=30)
+
+        res_b64 = await DigipayService.get_txn_logs(
+            db=db,
+            csc_id=merchant_id,
+            from_date_str=from_dt.strftime("%d-%m-%Y"),
+            to_date_str=to_dt.strftime("%d-%m-%Y"),
+            search_query=search,
+            rpp=10,
+            cp=1,
+            txn_type=txn_type
+        )
+        try:
+            decoded = json.loads(base64.b64decode(res_b64).decode('utf-8'))
+            total_records = decoded.get("totalRecords", 0)
+            records = decoded.get("list", [])
+        except Exception:
+            total_records = 0
+            records = []
+
+        return {
+            "merchantId": merchant_id,
+            "fromDate": from_dt.strftime("%Y-%m-%d"),
+            "toDate": to_dt.strftime("%Y-%m-%d"),
+            "totalRecords": total_records,
+            "records": records[:5]
         }
 
     @staticmethod

@@ -89,9 +89,15 @@ def simulate_llm(state: AgentState) -> Dict[str, Any]:
     
     msg_lower = last_msg.lower()
     
-    if any(k in msg_lower for k in ["balance", "money in wallet", "wallet amount"]):
+    if any(k in msg_lower for k in ["old digipay", "old balance", "legacy balance", "old wallet"]):
+        intent = "Wallet"
+        tool_calls.append({"name": "getOldDigipayBalance", "args": {"merchantId": csc_id}})
+    elif any(k in msg_lower for k in ["balance", "money in wallet", "wallet amount"]):
         intent = "Wallet"
         tool_calls.append({"name": "getWalletBalance", "args": {"merchantId": csc_id}})
+    elif any(k in msg_lower for k in ["daywise", "monthly report"]):
+        intent = "Wallet"
+        tool_calls.append({"name": "getDaywiseReport", "args": {"merchantId": csc_id, "yearMonth": "2026 June"}})
     elif any(k in msg_lower for k in ["kyc", "verify profile", "account active"]):
         intent = "KYC"
         tool_calls.append({"name": "getKYCStatus", "args": {"merchantId": csc_id}})
@@ -150,7 +156,19 @@ def simulate_llm(state: AgentState) -> Dict[str, Any]:
         intent = "General"
         if entity_id:
             tool_calls.append({"name": "closeTicket", "args": {"ticketId": entity_id}})
-    elif any(k in msg_lower for k in ["statement", "report", "passbook", "log", "logs", "history"]):
+    elif any(k in msg_lower for k in ["txn logs", "transaction logs", "logs"]):
+        intent = "Wallet"
+        from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        to_date = datetime.now().strftime("%Y-%m-%d")
+        tool_calls.append({
+            "name": "getTxnLogs",
+            "args": {
+                "merchantId": csc_id,
+                "fromDate": from_date,
+                "toDate": to_date
+            }
+        })
+    elif any(k in msg_lower for k in ["statement", "report", "passbook", "history"]):
         intent = "Wallet"
         from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         to_date = datetime.now().strftime("%Y-%m-%d")
@@ -268,6 +286,12 @@ async def tool_executor_node(state: AgentState, config: RunnableConfig) -> Dict[
                 res = await ToolAPIs.get_transaction(db, args["txnId"])
             elif name == "getWalletBalance":
                 res = await ToolAPIs.get_wallet_balance(db, args["merchantId"])
+            elif name == "getOldDigipayBalance":
+                res = await ToolAPIs.get_old_digipay_balance(db, args["merchantId"])
+            elif name == "getDaywiseReport":
+                res = await ToolAPIs.get_daywise_report(db, args["merchantId"], args.get("yearMonth", "2026 June"), args.get("day"))
+            elif name == "getTxnLogs":
+                res = await ToolAPIs.get_txn_logs(db, args["merchantId"], args.get("fromDate", "2026-01-01"), args.get("toDate", "2026-12-31"))
             elif name == "getKYCStatus":
                 res = await ToolAPIs.get_kyc_status(db, args["merchantId"])
             elif name == "getSettlementStatus":
@@ -389,10 +413,25 @@ async def response_agent_node(state: AgentState) -> Dict[str, Any]:
             continue
             
         if tool_name == "getWalletBalance":
+            old_bal_text = ""
+            if "oldDigipayBalance" in res:
+                old_bal_text = f" Your Old DigiPay balance is ₹{res['oldDigipayBalance']:.2f}."
             lines.append(
-                f"Your active wallet balance is ₹{res['balance']:.2f}. "
+                f"Your active wallet balance is ₹{res['balance']:.2f}.{old_bal_text} "
                 f"Your blocked balance is ₹{res['blockedBalance']:.2f}. "
                 f"Your last settlement was processed on {res['lastSettlementDate'] or 'N/A'} for ₹{res['lastSettlementAmount']:.2f}."
+            )
+        elif tool_name == "getOldDigipayBalance":
+            lines.append(
+                f"Your Old DigiPay legacy balance is ₹{res.get('oldDigipayBalance', 0.0):.2f} for account {res.get('merchantId')}."
+            )
+        elif tool_name == "getDaywiseReport":
+            lines.append(
+                f"Daywise report for {res.get('yearMonth', 'requested month')}: Available for download at {res.get('downloadUrl')}."
+            )
+        elif tool_name == "getTxnLogs":
+            lines.append(
+                f"Retrieved {res.get('totalRecords', 0)} transaction log(s) for your account between {res.get('fromDate')} and {res.get('toDate')}."
             )
         elif tool_name == "getKYCStatus":
             status = res["status"]
