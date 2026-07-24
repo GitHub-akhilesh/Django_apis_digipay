@@ -16,4 +16,7 @@ class SettlementResponseBuilder:
     def format_last_settlement(res: Dict[str, Any]) -> str:
         date_str = res.get("lastSettlementDate") or res.get("settlementDate") or "N/A"
         amt = float(res.get("lastSettlementAmount") or res.get("amount") or 0.0)
-        return f"Your last settlement was processed on {date_str} for ₹{amt:.2f}."
+        from_date = res.get("fromDate")
+        to_date = res.get("toDate")
+        range_suffix = f" (Period: {from_date} to {to_date})" if from_date and to_date else ""
+        return f"Your last settlement was processed on {date_str} for ₹{amt:.2f}.{range_suffix}"
