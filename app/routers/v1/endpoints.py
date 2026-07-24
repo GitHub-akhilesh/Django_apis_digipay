@@ -51,16 +51,9 @@ async def get_transaction_logs(
             txn_type=req.type
         )
         
-        # Dynamically format the success message based on transaction type
-        if req.type == "AEPS_CASH_WITHDRAWAL":
-            msg = "AePS Cash Withdrawal logs fetched successfully!"
-        else:
-            formatted_type = req.type.replace("_", " ").title()
-            msg = f"{formatted_type} logs fetched successfully!"
-            
         return EnvelopedResponse(
             status="OK",
-            msg=msg,
+            msg="Transaction logs fetched successfully!",
             errors=None,
             resData=base64_data
         )

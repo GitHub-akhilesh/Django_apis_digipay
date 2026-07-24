@@ -1,6 +1,14 @@
+import re
 import json
 import datetime
 from typing import Optional, Any
+
+def mask_pii(text: str) -> str:
+    if not text:
+        return text
+    text = re.sub(r'\b\d{8}(\d{4})\b', r'XXXX XXXX \1', text)
+    text = re.sub(r'\b(\d{2})\d{6}(\d{2})\b', r'\1XXXXXX\2', text)
+    return text
 
 
 def get_ledger_table_name(csc_id: str) -> str:
