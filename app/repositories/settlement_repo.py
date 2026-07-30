@@ -31,14 +31,14 @@ class SettlementRepository(BaseRepository[Settlement]):
         """Query transactions table directly for legacy system payout/settlement records."""
         try:
             query = """
-                SELECT txn_id, amount, status, date, txn_date
+                SELECT txn_id, amount, status, date
                 FROM transactions
                 WHERE user_id = :csc_id
                   AND (type IN ('Payout', 'Transfer', 'DSP Topup') OR category IN ('PAYOUT', 'TRANSFER', 'Settlement'))
             """
             params = {"csc_id": merchant_id}
             if from_date and to_date:
-                query += " AND txn_date BETWEEN :from_date AND :to_date"
+                query += " AND date BETWEEN :from_date AND :to_date"
                 params["from_date"] = from_date
                 params["to_date"] = to_date
 
@@ -47,7 +47,11 @@ class SettlementRepository(BaseRepository[Settlement]):
             res = await db.execute(text(query), params)
             row = res.fetchone()
             if row:
-                d_str = row[3].strftime("%Y-%m-%d %H:%M:%S") if row[3] else str(row[4])
+                d_str = (
+                    row[3].strftime("%Y-%m-%d %H:%M:%S")
+                    if hasattr(row[3], "strftime")
+                    else (str(row[3]) if row[3] else None)
+                )
                 return {
                     "txn_id": row[0],
                     "amount": abs(float(row[1] or 0.0)),

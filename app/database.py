@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import urllib.parse
 from contextvars import ContextVar
 from typing import AsyncGenerator, Optional
@@ -29,7 +30,15 @@ elif settings.DB_HOST:
 else:
     DATABASE_URL = "sqlite+aiosqlite:///./digipay.db"
 
-logger.info(f"Configuring database engine for env {settings.ENV} with URL {DATABASE_URL}")
+def _mask_db_url(url: str) -> str:
+    """Hide the password before the connection string reaches the log."""
+    return re.sub(r"://([^:/@]+):[^@]*@", r"://\1:***@", url)
+
+
+logger.info(
+    f"Configuring database engine for env {settings.ENV} "
+    f"with URL {_mask_db_url(DATABASE_URL)}"
+)
 
 # Set up Async Engine
 if "sqlite" in DATABASE_URL:

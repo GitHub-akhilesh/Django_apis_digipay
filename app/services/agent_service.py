@@ -5,8 +5,13 @@ from typing import Dict, List, Any, Optional, TypedDict
 from pydantic import BaseModel, Field
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from langgraph.graph import StateGraph, END
-from langchain_core.runnables import RunnableConfig
+try:
+    from langgraph.graph import StateGraph, END
+    from langchain_core.runnables import RunnableConfig
+except ImportError:  # langgraph is optional; see _run_graph_fallback below
+    StateGraph = None
+    END = None
+    RunnableConfig = None
 
 from app.schemas.enums import ToolName
 from app.services.tools import (
@@ -335,7 +340,33 @@ def build_agent_graph():
     
     return workflow.compile()
 
-agent_app = build_agent_graph()
+agent_app = build_agent_graph() if StateGraph is not None else None
+
+
+async def _run_graph_fallback(state: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute the same nodes and routing as build_agent_graph(), without langgraph.
+
+    AgentState declares no reducers, so langgraph merges each node's partial
+    return by overwrite -- which is exactly what dict.update() does here.
+    """
+    async def step(node, *args):
+        result = await node(*args)
+        if result:
+            state.update(result)
+
+    await step(intent_router_node, state)
+
+    if route_next_node(state) == "faq_agent":
+        await step(faq_agent_node, state)
+    else:
+        await step(specialist_agent_node, state)
+        if route_after_specialist(state) == "tool_executor":
+            await step(tool_executor_node, state, config)
+            await step(validation_agent_node, state)
+
+    await step(response_agent_node, state)
+    return state
+
 
 class AgentOrchestrator:
     """Orchestrator for managing AI Chat sessions using LangGraph."""
@@ -367,8 +398,11 @@ class AgentOrchestrator:
             "response": None
         }
         
-        config: RunnableConfig = {"configurable": {"db": db, "thread_id": session_id}}
-        final_state = await agent_app.ainvoke(initial_state, config=config)
+        config = {"configurable": {"db": db, "thread_id": session_id}}
+        if agent_app is not None:
+            final_state = await agent_app.ainvoke(initial_state, config=config)
+        else:
+            final_state = await _run_graph_fallback(dict(initial_state), config)
         
         return {
             "status": "OK",

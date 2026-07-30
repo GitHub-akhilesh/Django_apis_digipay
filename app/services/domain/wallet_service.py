@@ -7,6 +7,25 @@ from app.repositories.settlement_repo import SettlementRepository
 
 logger = logging.getLogger("digipay")
 
+
+def _to_amount(value) -> float:
+    """
+    Coerce a batch-balance entry to a float.
+
+    get_wallet_balances_batch() returns the BALANCE_UNAVAILABLE sentinel rather
+    than fabricating "0.00" when it cannot determine a balance, so this is a
+    string field that is not always numeric. Treat anything non-numeric as 0.0
+    and let the caller's other sources decide -- never raise, or an unavailable
+    balance turns into a failed request.
+    """
+    if value is None or value == wallet_repo.BALANCE_UNAVAILABLE:
+        return 0.0
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        logger.warning("Unexpected wallet balance value %r; treating as 0.0", value)
+        return 0.0
+
 @dataclass
 class WalletSnapshot:
     merchant_id: str
@@ -25,7 +44,7 @@ class WalletSnapshotService:
         legacy_bal = await wallet_repo.get_user_legacy_balance(db, merchant_id)
         
         calc_dict = await wallet_repo.get_wallet_balances_batch(db, [merchant_id])
-        calc_bal = float(calc_dict.get(merchant_id, "0.00"))
+        calc_bal = _to_amount(calc_dict.get(merchant_id))
 
         last_payout = await SettlementRepository.get_last_payout_from_transactions(db, merchant_id)
 

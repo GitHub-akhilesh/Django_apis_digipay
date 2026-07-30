@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DECIMAL, DateTime, Date, BigInteger, JSON
+from sqlalchemy import Column, Integer, String, DECIMAL, DateTime, BigInteger, JSON
 from app.database import Base
 
 class Transaction(Base):
@@ -25,8 +25,10 @@ class Transaction(Base):
     commission = Column(DECIMAL(4, 2), default=0.0)
     tds = Column(DECIMAL(4, 2), default=0.0)
     RefundLedgerStatus = Column(Integer, default=0, index=True)
-    txn_date = Column(Date, nullable=False, index=True)
-    receipt_id = Column(String(35), nullable=True)
+    # NOTE: `txn_date` and `receipt_id` are deliberately not mapped -- they do
+    # not exist on the transactions table, so mapping them made every
+    # select(Transaction) emit an unknown column and fail. `date` is the
+    # timestamp column. Nothing reads them.
 
 class CategoryMapping(Base):
     __tablename__ = "category_mapping"
