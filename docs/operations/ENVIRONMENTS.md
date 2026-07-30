@@ -283,24 +283,53 @@ as defence in depth. Allowed origins come from `CORS_ALLOW_ORIGINS`.
 
 ## Legacy wallet balance
 
-`POST /api/v1/wallet_balance` sums the `transactions` table, ported verbatim from
-`CSC_Connect_Digipay/mainapp/digipay_utils.py::cal_wallet_balance`:
+`POST /api/v1/wallet_balance` is ported from
+`CSC_Connect_Digipay/mainapp/digipay_utils.py::cal_wallet_balance`. It is a
+**refresh-then-read against `DigipayUsers`**, not a read of `transactions`:
 
 ```sql
-SELECT COALESCE(SUM(amount), 0) AS wallet_balance FROM transactions
-WHERE status IN ('SUCCESS', 'INITIATED') AND user_id = %s
+-- 1. refresh the cached column from the ledger. The inner join means only
+--    CSC IDs that actually have transaction rows are touched.
+UPDATE DigipayUsers du
+JOIN (SELECT user_id, COALESCE(SUM(amount), 0) AS total
+        FROM transactions
+       WHERE status IN ('SUCCESS','INITIATED') AND user_id IN (...)
+       GROUP BY user_id) t ON du.user_id = t.user_id
+   SET du.wallet_balance = t.total, du.balance_update_at = ?;
+
+-- 2. the returned value comes from here, not from the sum above
+SELECT user_id, wallet_balance FROM DigipayUsers WHERE user_id IN (...);
 ```
 
-Response shape is unchanged: `{"500100100014": "801141.48"}`.
+Response shape is unchanged: `{"523816200013": "191.55"}`.
 
-Two behaviours worth knowing:
+Getting the order right matters, and it is easy to get wrong:
 
-* A CSC ID with no rows returns **`"Wallet balance not available"`**, not `"0.00"` —
-  the two are different claims, and a SQL failure is not a zero balance.
-* The reference also writes the result back to `DigipayUsers.wallet_balance` /
-  `balance_update_at`, so this nominally read-only endpoint performs a cache
-  refresh. It is best-effort and cannot fail the read; pass `write_back=False`
-  to skip it.
+* **The answer is read from `DigipayUsers`.** So `"Wallet balance not available"`
+  means *no balance on record* — the CSC ID is absent from `DigipayUsers`, or its
+  `wallet_balance` is NULL. A VLE who is on file with a balance of zero and
+  simply has no transactions still gets `"0.00"`, because that zero is what the
+  table holds. Computing the answer from the sum instead collapses those two
+  cases and turns a legitimate `"0.00"` into the sentinel.
+* A SQL failure also yields the sentinel, never `"0.00"` — a database error is
+  not a balance of zero.
+* Step 1's inner join is load-bearing. Refreshing every requested ID instead
+  would write `0` over the stored balance of a real user who happens to have no
+  `SUCCESS`/`INITIATED` rows.
+* This nominally read-only endpoint therefore performs a cache write. It is
+  best-effort and cannot fail the read; pass `write_back=False` to skip step 1
+  and read the stored value as-is.
+
+Probe with a CSC ID that exists. On PROD (`10.1.74.201`),
+`523816200013` → `"191.55"` and `745277760013` → `"420.29"`, while
+`500100100014` is in neither `DigipayUsers` nor `transactions` and correctly
+returns the sentinel — it is not a valid smoke-test ID.
+
+Note also that PROD has **no `wallets` table**, so the ORM `Wallet` lookup in
+`WalletSnapshotService` always fails there and the transactions/`DigipayUsers`
+path is the only one that answers. That lookup swallows its error, so it must
+roll the session back — otherwise the aborted statement poisons the session and
+every later query in the same request fails too, and the fallback never runs.
 
 **This needs MySQL.** The bundled `legacy-api` container runs against an empty
 SQLite file, so every legacy answer is structurally correct and empty — a Rs 0.00

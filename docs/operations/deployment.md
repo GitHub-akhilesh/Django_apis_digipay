@@ -26,9 +26,9 @@ where chat starts but every data lookup fails.
    - `OPENAI_API_KEY` is set. Empty means chat falls back to offline keyword
      routing and lexical RAG embeddings, which is a local-testing mode only.
    - `DATABASE_URL` points at the **`npci` MySQL**, not SQLite. The legacy wallet
-     balance sums the `transactions` table and the passbook needs the sharded
-     `digipay_ledger_<n>` tables; against SQLite every legacy answer is
-     structurally valid and empty.
+     balance reads `DigipayUsers` (refreshed from `transactions`) and the passbook
+     needs the sharded `digipay_ledger_<n>` tables; against SQLite every legacy
+     answer is structurally valid and empty.
    - `CORS_ALLOW_ORIGINS` lists the browser origins that will call this service.
    - `JWT_ROLE_MAP` reviewed — confirm whether your DigiPay `ADMIN` is a CSC owner
      (default, maps to `ROLE_MERCHANT`) or a platform administrator. Getting this
@@ -58,6 +58,127 @@ docker compose --env-file .env.docker ps      # all four services healthy
 
 `--env-file` is deliberate: both applications also read a root `.env`, so putting
 Compose variables there would silently alter a non-Docker run.
+
+## Production server: legacy API on 10.1.76.194
+
+The Docker topology above is how the two services are *packaged*. The legacy
+DigiPay API is currently deployed on `10.1.76.194` a different way — bare metal
+under systemd, no containers — so deploy it with the procedure in this section.
+
+### Topology as deployed
+
+| Port | Managed by | Runs as | Source |
+|---|---|---|---|
+| 80 | `digipay-api.service` (systemd) | `root` | `/home/akhilesh/digipay_api` |
+| 8000 | detached `uvicorn`, **not** a unit | `akhilesh` | same directory |
+
+Both serve the same code from the same tree; only the process manager differs.
+This is what "root level and user level" refers to — one directory, two
+listeners. **Restart both**, or `:8000` silently keeps serving the old build.
+
+`nginx` is installed but **inactive**; the application binds `:80` directly.
+`/etc/nginx/conf.d/digipay.conf` proxies to a gunicorn socket for the separate
+Django app under `/root/new_digipay` and is unrelated to this service.
+
+Two standing hazards:
+
+- **`digipay-fastapi.service` is a duplicate unit that also binds `:80`.** It is
+  stopped and disabled. If it is ever re-enabled, both units fight for the port
+  and the loser crash-loops (`Errno 98 Address already in use`) — it accumulated
+  123,270 restarts this way. Leave it disabled.
+- **The `:8000` instance is unmanaged.** It does not survive a reboot, and if its
+  master process is killed the worker forks are orphaned and keep the port bound
+  while serving whatever code was current when they started. Converting it to a
+  systemd unit (on `:8000`, never `:80`) would remove this class of problem.
+
+### Never ship `app/config.py` to this server
+
+The server's `config.py` reads its env files in the order `.env.prod, .env.local,
+.env`, so `.env` wins and the app targets **PROD `10.1.74.201`**. The repository
+version uses `.env.prod, .env, .env.local`, so `.env.local` wins — and that file
+on the server points at **UAT `10.1.74.180`**. Deploying the repository
+`config.py` therefore switches production onto the UAT database silently, with
+no error and no visible symptom. Exclude it from the package; the deploy check
+below asserts `DB_HOST` afterwards to catch the mistake if it ever happens.
+
+For the same reason, do not ship `app/tests/`, and extract additively so the
+server's own `app/services/tool_apis.py` (orphaned, not imported by this
+codebase) is left alone.
+
+### langgraph is not installed on this server
+
+`app/services/agent_service.py` imports `langgraph` inside a `try/except
+ImportError` and falls back to `_run_graph_fallback()`, which walks the same
+nodes and routing as `build_agent_graph()`. `AgentState` declares no reducers,
+so langgraph merges each node's partial return by overwrite — exactly what the
+fallback's `dict.update()` does. The chat endpoint is fully functional without
+langgraph; do not "fix" this by installing it on a whim, as langchain pulls in a
+pydantic version that the running service does not otherwise need.
+
+### Procedure
+
+Dry-run first. A staging copy catches import errors, schema drift and response
+regressions **before** the live tree is touched:
+
+```bash
+STAGE=~/.deploy-stage
+rm -rf $STAGE && mkdir -p $STAGE && chmod 700 $STAGE
+cp -r app $STAGE/ && cp .env* $STAGE/
+tar -xzf /tmp/app_deploy.tgz -C $STAGE          # package excludes config.py
+cd $STAGE && PYTHONPATH=$STAGE ~/digipay_api/venv/bin/python -c 'import app.main'
+rm -rf $STAGE                                    # removes the copied env files
+```
+
+Then deploy, keeping a backup you can actually restore from:
+
+```bash
+sudo tar -czf ~/backups/app-$(date +%Y%m%d-%H%M%S).tgz app
+sudo find app -name __pycache__ -type d -exec rm -rf {} +   # sudo: root-owned
+tar -xzf /tmp/app_deploy.tgz -C ~/digipay_api
+sudo chown -R akhilesh:akhilesh app
+./venv/bin/python -m compileall -q app
+sudo systemctl restart digipay-api.service                  # port 80
+# port 8000 — kill the old listener, then relaunch detached
+setsid nohup ./venv/bin/python -m uvicorn app.main:app \
+  --host 0.0.0.0 --port 8000 --workers 2 > logs/uvicorn-8000.log 2>&1 &
+```
+
+`__pycache__` is written by the root-owned service, so a plain `rm -rf app` fails
+partway as `akhilesh`. Do not chain the restore as `rm -rf app && tar -xzf ...`:
+the `rm` exits non-zero, the `&&` swallows the restore, and the tree is left
+half-deployed. Use `sudo` and run the two commands unconditionally.
+
+### Verification
+
+```bash
+H='-H Content-Type:application/json -H X-Client-Id:LOG_SERVICE
+   -H X-Bypass-Secret:<INTERNAL_BYPASS_SECRET>'
+for P in 80 8000; do
+  curl -s http://127.0.0.1:$P/api/v1/health
+  curl -s -X POST http://127.0.0.1:$P/api/v1/wallet_balance $H \
+    -d '{"csc_ids":["523816200013","745277760013"]}'
+done
+```
+
+Expected, identical on both ports:
+
+```
+{"status":"OK","msg":"API service is healthy"}
+{"523816200013":"191.55","745277760013":"420.29"}
+```
+
+Those two CSC IDs are real rows in `DigipayUsers` and are the regression check —
+if either amount changes, the balance path has moved and you should roll back.
+Do **not** use `500100100014` as a probe: it exists in neither `DigipayUsers` nor
+`transactions`, so it correctly returns `Wallet balance not available` (see
+`ENVIRONMENTS.md`).
+
+Also confirm the deploy did not move the database target:
+
+```bash
+./venv/bin/python -c "from app.config import settings; print(settings.DB_HOST)"
+# expect 10.1.74.201 on this server
+```
 
 ## Deployment Steps
 1. **Tag Version Release**:
