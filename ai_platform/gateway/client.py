@@ -46,10 +46,24 @@ class GatewayClient:
         
         # 2. Add authorization or internal bypass headers
         if jwt_token:
-            headers["Authorization"] = f"Bearer {jwt_token}" if not jwt_token.startswith("Bearer ") else jwt_token
+            bare_token = jwt_token[7:].strip() if jwt_token.startswith("Bearer ") else jwt_token
+            headers["Authorization"] = f"Bearer {bare_token}"
+
+            # The DigiPay gateway reads the session from the `access_token`
+            # cookie, NOT from the Authorization header. The two rejections are
+            # distinguishable and prove it: a Bearer header yields "Full
+            # authentication is required to access this resource" (credential not
+            # recognised at all), while the cookie yields "Session expired"
+            # (recognised, server session lapsed). Sending only the header meant
+            # every /v2/* call was unauthenticated no matter how valid the token.
+            if settings.GATEWAY_FORWARD_TOKEN_AS_COOKIE:
+                cookie_name = settings.GATEWAY_TOKEN_COOKIE_NAME
+                existing = headers.get("Cookie")
+                cookie = f"{cookie_name}={bare_token}"
+                headers["Cookie"] = f"{existing}; {cookie}" if existing else cookie
         else:
             headers.update(get_internal_auth_headers())
-            
+
         return headers
 
     @classmethod
@@ -62,7 +76,13 @@ class GatewayClient:
         headers: Optional[Dict[str, str]] = None,
         jwt_token: Optional[str] = None
     ) -> httpx.Response:
-        target_url = f"{settings.API_GATEWAY_URL}{endpoint_path}" if not endpoint_path.startswith("http") else endpoint_path
+        # gateway_base_url normalises the /gateway context path, so API_GATEWAY_URL
+        # may be given with or without it.
+        target_url = (
+            f"{settings.gateway_base_url}{endpoint_path}"
+            if not endpoint_path.startswith("http")
+            else endpoint_path
+        )
         final_headers = cls._prepare_headers(headers, jwt_token)
         
         logger.info(f"Calling downstream gateway endpoint: {method} {target_url}")

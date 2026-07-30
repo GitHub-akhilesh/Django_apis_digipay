@@ -56,7 +56,14 @@ def test_hybrid_retrieval_and_citations():
     assert len(chunks) > 0
     assert "Settlement" in chunks[0]["source"]
 
+    # Citations are user-facing, so they name the document and page in plain
+    # words. The old format ("Sources & Provenance", per-chunk "Confidence: 84%")
+    # exposed retrieval internals to a VLE and invited the wrong reading — a
+    # similarity score is not the answer's correctness. Scores remain on the API
+    # response and in logs for tuning.
     citations = citation_engine.format_citations(chunks)
-    assert "Sources & Provenance" in citations
-    assert "Page" in citations
-    assert "Confidence" in citations
+    assert "Source" in citations
+    assert "page" in citations
+    assert "Settlement" in citations
+    assert "Confidence" not in citations
+    assert ".pdf" not in citations, "storage detail should not be shown to users"

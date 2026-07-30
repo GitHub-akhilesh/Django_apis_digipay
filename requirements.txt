@@ -11,3 +11,20 @@ uvicorn>=0.22.0
 async-timeout>=4.0.3
 exceptiongroup>=1.0.2
 tomli>=2.0.0
+
+# Agent workflow graph. Imported at module load by BOTH services —
+# ai_platform/workflow/graph.py and app/services/agent_service.py — so a missing
+# langgraph is a hard startup failure, not a degraded feature. It was previously
+# only present in the local virtualenv, which is why the containers crash-looped
+# with ModuleNotFoundError while local runs worked.
+langgraph>=1.0.0
+langchain-core>=1.0.0
+
+# HTTP client used by every gateway client (gateway/client.py,
+# gateway/legacy_v1/client.py).
+httpx>=0.27.0
+
+# MongoDB-backed RAG knowledge store (rag/mongo_store.py).
+# The store degrades gracefully to the in-memory index if these are absent.
+motor>=3.4.0
+pymongo>=4.7.0

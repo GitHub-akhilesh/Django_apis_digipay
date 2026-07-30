@@ -1,8 +1,34 @@
 import logging
-from typing import Dict, Any
+from typing import Any, Dict, List
+
 from planner.service import PlannerService
+from tools.registry import requires_confirmation
 
 logger = logging.getLogger("ai_platform.workflow.nodes.plan")
+
+
+def _apply_confirmation_policy(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Re-derive the confirmation requirement from the tool registry.
+
+    The planner is asked to flag state-changing steps, but a model can forget.
+    The registry is the authority, so a step naming a tool whose backing API is
+    not read-only is escalated to needing confirmation regardless of what the
+    plan said. This runs only when a plan is first created — the CONFIRM branch
+    returns before this, so an approved plan is not re-flagged into a loop.
+    """
+    enforced = []
+    for step in steps:
+        step = {**step}
+        if requires_confirmation(step.get("tool", "")):
+            if not step.get("requires_confirmation"):
+                logger.info(
+                    "Escalating step %s (%s) to require confirmation: tool changes state.",
+                    step.get("id"), step.get("tool"),
+                )
+            step["requires_confirmation"] = True
+        enforced.append(step)
+    return enforced
 
 async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("Graph Node: planner")
@@ -26,11 +52,12 @@ async def planner_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Generate new plan
     intent = state.get("intent", "GENERAL")
     csc_id = state.get("csc_id")
-    plan = await PlannerService.create_plan(last_msg, intent, csc_id)
+    user_roles = state.get("user_roles") or ["ROLE_MERCHANT"]
+    plan = await PlannerService.create_plan(last_msg, intent, csc_id, user_roles=user_roles)
     
-    steps = plan.get("steps", [])
+    steps = _apply_confirmation_policy(plan.get("steps", []))
     confidence = plan.get("planner_confidence", 1.0)
-    
+
     # Check if any step requires human confirmation
     awaiting_confirmation = any(s.get("requires_confirmation") for s in steps)
     

@@ -26,24 +26,28 @@ def test_jwt_authentication_rejection_and_api_response():
     assert response.json()["success"] is False
     assert response.json()["errorCode"] == ErrorCode.AUTH_MISSING_TOKEN.value
 
-def test_jwt_authentication_success_and_api_response():
+def test_jwt_authentication_success_and_api_response(monkeypatch):
     token = generate_test_token()
     headers = {"Authorization": f"Bearer {token}"}
-    
+
     class MockResponse:
         status_code = 200
+        text = "{}"
         def json(self):
             return {
                 "success": True,
                 "message": "Mock Success",
                 "data": {"response": "Mocked response", "intent": "INFO", "escalate": False, "policyChecked": True}
             }
-            
+
     async def mock_request(*args, **kwargs):
         return MockResponse()
-        
-    import gateway.client
-    gateway.client.GatewayClient.request = mock_request
+
+    # monkeypatch, not a bare assignment: `GatewayClient.request = mock_request`
+    # is never undone, so it leaked into every test that ran afterwards and
+    # silently replaced the real HTTP client for the rest of the session.
+    from gateway.client import GatewayClient
+    monkeypatch.setattr(GatewayClient, "request", mock_request)
 
     response = client.post("/api/v1/chat", json={"sessionId": "123", "message": "hello"}, headers=headers)
     assert response.status_code == 200

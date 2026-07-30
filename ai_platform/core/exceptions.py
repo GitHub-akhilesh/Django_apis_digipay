@@ -32,6 +32,32 @@ class AuthenticationException(AIPlatformException):
             developer_message=developer_message
         )
 
+class PermissionDeniedException(AuthenticationException):
+    """
+    The caller is authenticated but their role does not permit this tool.
+
+    Subclasses AuthenticationException so existing handlers and tests that catch
+    the parent keep working, while letting the response layer distinguish "you are
+    not allowed to see this" from "the backend failed" — the first deserves a clear
+    explanation, the second an escalation.
+    """
+
+
+class TenantIsolationException(AuthenticationException):
+    """The caller tried to read a record belonging to a different CSC ID."""
+
+
+class UpstreamSessionException(AuthenticationException):
+    """
+    A downstream service rejected the caller's session (401/403).
+
+    Distinct from a backend fault: the DigiPay gateway keeps server-side session
+    state and answers "Session expired" once it lapses, even though the JWT is
+    still structurally valid. Reporting that as an outage sends the user to
+    human support when all they need to do is sign in again.
+    """
+
+
 class ValidationException(AIPlatformException):
     def __init__(self, developer_message: str):
         super().__init__(
@@ -60,10 +86,15 @@ class LLMException(AIPlatformException):
         )
 
 class GatewayException(AIPlatformException):
-    def __init__(self, developer_message: str):
+    def __init__(self, developer_message: str = None, user_message: Optional[str] = None):
+        # user_message is optional so a downstream *business* rejection can carry
+        # the service's own explanation through to the caller, while transport
+        # failures keep the generic catalog wording. Without this the business
+        # branch in gateway.base_client raised TypeError instead of an exception
+        # the API layer could render.
         super().__init__(
             status_code=504,
             error_code=ErrorCode.GW_TIMEOUT,
-            user_message=DEFAULT_USER_MESSAGES[ErrorCode.GW_TIMEOUT],
-            developer_message=developer_message
+            user_message=user_message or DEFAULT_USER_MESSAGES[ErrorCode.GW_TIMEOUT],
+            developer_message=developer_message or user_message
         )

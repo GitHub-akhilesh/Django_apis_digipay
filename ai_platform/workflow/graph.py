@@ -111,9 +111,19 @@ class AgentOrchestrator:
         plan_outcomes = metadata.get("plan_outcomes", [])
         awaiting_confirmation = metadata.get("awaiting_confirmation", False)
         
-        # If user initiates a new topic (not confirming), we clear the previous plan state
-        if message.strip().upper() != "CONFIRM" and awaiting_confirmation:
-            logger.info("New message received during pending confirmation. Clearing old plan state.")
+        # Any message other than CONFIRM starts a fresh plan.
+        #
+        # This previously only cleared state when a confirmation was pending, so a
+        # normally-completed turn left its plan_outcomes in session memory and the
+        # NEXT question re-rendered the previous answer alongside the new one —
+        # asking about the passbook returned the passbook *and* the balance from
+        # the turn before. Only a CONFIRM continues an existing plan.
+        if message.strip().upper() != "CONFIRM":
+            if plan_steps or plan_outcomes:
+                logger.info(
+                    "New user message starts a new plan. Clearing %s pending step(s) "
+                    "and %s previous outcome(s).", len(plan_steps), len(plan_outcomes)
+                )
             plan_steps = []
             plan_outcomes = []
             awaiting_confirmation = False

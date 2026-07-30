@@ -7,6 +7,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from auth.identity import (
+    extract_merchant_id,
+    extract_token,
+    extract_user_id,
+    normalise_roles,
+)
 from auth.jwt import AuthManager
 from core.error_codes import ErrorCode
 from core.responses import ApiResponse
@@ -37,19 +43,31 @@ class JWTAuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.time()
         
-        # Bypassed paths
-        bypass_paths = ["/", "/ui", "/health", "/ready", "/metrics", "/docs", "/openapi.json", "/live", "/favicon.ico"]
+        # A CORS preflight carries no Authorization header by definition, so
+        # authenticating it is impossible: rejecting it with 401 also strips the
+        # Access-Control-Allow-* headers, and the browser reports an opaque "CORS
+        # error" instead of the real problem. CORS is registered outermost in
+        # main.py so preflights should not reach here at all — this is defence in
+        # depth in case that ordering is ever changed.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
+        # Bypassed paths. /redoc and /docs/oauth2-redirect belong here with /docs:
+        # the documentation UIs are public, and omitting /redoc made it 401 while
+        # /docs worked, which reads as a broken page rather than a policy.
+        bypass_paths = [
+            "/", "/ui", "/health", "/ready", "/metrics", "/live", "/favicon.ico",
+            "/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json",
+        ]
         if request.url.path in bypass_paths or request.url.path.startswith("/static"):
             response = await call_next(request)
             return response
 
-        # Extract JWT Token from headers or query parameters
-        auth_header = request.headers.get("Authorization")
-        raw_token = None
-        if auth_header and auth_header.startswith("Bearer "):
-            raw_token = auth_header.split(" ")[1]
-        else:
-            raw_token = request.query_params.get("token")
+        # Extract the token from the Authorization header, a session cookie, or a
+        # query parameter. The cookie matters: a DigiPay browser session lives in
+        # `access_token`, so header-only extraction saw no credential at all and
+        # rejected every request from the React app with 401.
+        raw_token = extract_token(request)
 
         if not raw_token:
             logger.warning(f"Rejecting unauthenticated call to endpoint: {request.url.path}")
@@ -70,21 +88,32 @@ class JWTAuthenticationMiddleware(BaseHTTPMiddleware):
             # 2. Cryptographic signature and claims validation
             payload = AuthManager.verify_token(token)
             
-            user_id = str(payload.get("sub") or payload.get("userId") or "")
-            merchant_id = str(payload.get("cscId") or payload.get("merchantId") or "")
-            roles = payload.get("roles") or payload.get("authorities") or []
+            # A DigiPay token has no cscId/merchantId claim - the CSC ID is in
+            # `ownerId` (or `sub`), so resolve across all known spellings.
+            # Roles are translated from DigiPay's vocabulary (VLE, ADMIN) into
+            # this platform's ROLE_* names; see auth/identity.py.
+            user_id = extract_user_id(payload)
+            merchant_id = extract_merchant_id(payload)
+            roles = normalise_roles(payload.get("roles") or payload.get("authorities"))
             tenant_id = str(payload.get("tenantId") or "")
-            
+
             # Construct Principal instance
             principal = AuthenticatedPrincipal(
                 user_id=user_id,
                 merchant_id=merchant_id,
-                roles=roles if isinstance(roles, list) else [str(roles)],
+                roles=roles,
                 tenant_id=tenant_id
             )
             
             # Attach to request state
             request.state.user = principal
+
+            # Retain the verified raw token so downstream calls can act AS the
+            # caller. The DigiPay gateway requires a real end-user JWT — it does
+            # not accept internal bypass headers — so without forwarding this,
+            # every /v2/* data lookup returns 401 "Full authentication is
+            # required" no matter how the caller authenticated to us.
+            request.state.access_token = raw_token
             
             # Bind context variables directly via TraceContext.process_txn()
             TraceContext.process_txn(

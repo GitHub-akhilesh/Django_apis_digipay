@@ -3,7 +3,9 @@ from tools.decorator import tool
 @tool(
     name="raiseTicket",
     description="Creates a support ticket for a merchant issue",
-    roles=["ROLE_USER", "ROLE_MERCHANT", "ROLE_SUPPORT", "ROLE_ADMIN"]
+    roles=["ROLE_USER", "ROLE_MERCHANT", "ROLE_SUPPORT", "ROLE_ADMIN"],
+    read_only=False,
+    domain="support"
 )
 async def raise_ticket(merchant_id: str, category: str = "General", details: str = "", jwt_token: str = None):
     return {

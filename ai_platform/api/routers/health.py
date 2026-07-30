@@ -34,11 +34,14 @@ async def ready(response: Response):
 
     # 2. Check Spring Boot API Gateway liveness
     try:
-        async with httpx.AsyncClient(timeout=1.5) as client:
-            # We ping the main Spring Boot gateway health page.
-            # Locally, this checks if the gateway responds.
-            # In mock setups, we fallback cleanly or request health status directly.
-            gw_response = await client.get(f"{settings.API_GATEWAY_URL}/health", timeout=1.0)
+        # API_GATEWAY_HEALTH_PATH is the actuator endpoint, not /health: the
+        # latter sits behind Spring Security on the real gateways and answers
+        # 401, which would make a perfectly healthy gateway look unreachable.
+        # The timeout is generous enough for a TLS handshake to a remote host,
+        # since the gateway is no longer assumed to be on localhost.
+        health_url = f"{settings.gateway_base_url}{settings.API_GATEWAY_HEALTH_PATH}"
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            gw_response = await client.get(health_url)
             if gw_response.status_code >= 500:
                 gateway_status = "DOWN"
     except Exception as e:

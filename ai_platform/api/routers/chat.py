@@ -31,13 +31,20 @@ async def http_chat(req: ChatRequest, request: Request):
             detail="Security context is unauthenticated. Request state missing user principal."
         )
 
-    # 3. Delegate execution to ChatService
+    # 3. Delegate execution to ChatService.
+    #
+    # The caller's verified token is forwarded so downstream calls act AS the
+    # user. This is required, not an optimisation: the DigiPay gateway rejects
+    # internal bypass headers and answers 401 "Full authentication is required"
+    # without a real end-user JWT, so passing None here made every /v2/* data
+    # lookup fail. It also means the gateway's own RBAC and audit trail see the
+    # actual user rather than a service account.
     result = await chat_service.process_chat_message(
         session_id=req.sessionId,
         message=clean_message,
         csc_id=principal.merchant_id,
         user_roles=principal.roles,
-        jwt_token=None  # Connection pool handles propagation automatically
+        jwt_token=getattr(request.state, "access_token", None)
     )
     
     # 4. Return via Global Response Builder
@@ -70,7 +77,10 @@ async def http_chat_stream(req: ChatRequest, request: Request):
             message=clean_message,
             csc_id=csc_id,
             history=history,
-            user_roles=roles
+            user_roles=roles,
+            # Same reason as the non-streaming endpoint: the gateway needs the
+            # caller's real JWT or every data lookup comes back 401.
+            jwt_token=getattr(request.state, "access_token", None)
         ),
         media_type="text/event-stream"
     )

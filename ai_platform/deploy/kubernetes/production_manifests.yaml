@@ -12,6 +12,45 @@ data:
   APP_NAME: "DigiPay AI Platform"
   ENVIRONMENT: "production"
   PORT: "8000"
+
+  # DigiPay Spring Boot gateway-service (PRODUCTION). Same host the React app
+  # uses as VITE_API_BASE_URL. HTTPS only.
+  #   production   https://digipayapi.csccloud.in
+  #   uat          https://digipayapiuat.csccloud.in
+  API_GATEWAY_URL: "https://digipayapi.csccloud.in"
+  # gateway-service sets server.servlet.context-path=/gateway; this is appended
+  # automatically, so API_GATEWAY_URL works with or without the suffix.
+  API_GATEWAY_CONTEXT_PATH: "/gateway"
+  # /health on the gateway is behind Spring Security (401); use the actuator.
+  API_GATEWAY_HEALTH_PATH: "/actuator/health"
+
+  # Legacy DigiPay API service (app/main.py) - deployed separately, URLs unchanged.
+  # This is NOT the Spring gateway above; it is its own service.
+  #
+  # Deployed at http://10.1.76.194 (port 80) - verified serving
+  # /api/v1/health and /openapi.json titled "DigiPay API Gateway & Ledger
+  # Services". This is the same host React exposes as VITE_OLD_URL.
+  #
+  # LEGACY_API_URL        address used for server-to-server calls.
+  # LEGACY_API_PUBLIC_URL address advertised in the merged Swagger schema, so it
+  #                       must be reachable from the user's BROWSER. 10.x is an
+  #                       internal range, so this only resolves on the corporate
+  #                       network - replace with a public ingress hostname if the
+  #                       docs are served to users outside it.
+  LEGACY_API_URL: "http://10.1.76.194"
+  LEGACY_API_PUBLIC_URL: "http://10.1.76.194"
+  AGGREGATE_LEGACY_OPENAPI: "true"
+
+  # RAG knowledge store.
+  MONGO_URI: "mongodb://mongo.ai-platform.svc.cluster.local:27017"
+  MONGO_DB: "digipay_ai"
+  RAG_ENABLED: "true"
+  RAG_AUTO_SEED: "true"
+
+  # Client RSA keypair for encrypted gateway responses. MUST be backed by a
+  # persistent volume: if the key changes between a request and its response,
+  # the encrypted ledger balance cannot be decrypted.
+  GATEWAY_CLIENT_KEY_PATH: "/srv/ai_platform/data/keys/gateway_client_rsa.pem"
 ---
 apiVersion: v1
 kind: Secret
@@ -21,6 +60,12 @@ metadata:
 type: Opaque
 data:
   JWT_SECRET: "c3VwZXJzZWNyZXRqd3RrZXk=" # base64 placeholder
+  # Must match the legacy DigiPay API service's value, or the assistant's
+  # read-only calls to /api/v1/* are rejected with 401.
+  INTERNAL_BYPASS_SECRET: "Q0hBTkdFX01F" # base64 placeholder - CHANGE_ME
+  # Leave empty to run on the offline keyword router with lexical RAG
+  # embeddings; set a real key before serving users.
+  OPENAI_API_KEY: "" # base64 placeholder
 ---
 apiVersion: apps/v1
 kind: Deployment

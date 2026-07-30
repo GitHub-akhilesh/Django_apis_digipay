@@ -21,6 +21,16 @@ def generate_test_token(csc_id: str = "500100100014") -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 def test_tool_governance_metadata():
+    """
+    Governance metadata is present on a pre-existing tool.
+
+    getWalletBalance is still registered - nothing was deleted - but its health
+    is now UNREACHABLE, because it calls /wallet/balance and the configured
+    DigiPay gateway does not serve that prefix. Set
+    LEGACY_MICROSERVICE_ENDPOINTS_ENABLED=true to point it at a backend that does.
+    """
+    from tools.registry import HEALTH_UNREACHABLE
+
     tool_meta = TOOL_REGISTRY.get("getWalletBalance")
     assert tool_meta is not None
     assert hasattr(tool_meta, "version")
@@ -28,7 +38,12 @@ def test_tool_governance_metadata():
     assert hasattr(tool_meta, "owner")
     assert hasattr(tool_meta, "health")
     assert tool_meta.version == "1.0"
-    assert tool_meta.health == "HEALTHY"
+    assert tool_meta.health in ("HEALTHY", HEALTH_UNREACHABLE)
+
+    # A tool backed by a live gateway endpoint must still report healthy.
+    gateway_tool = TOOL_REGISTRY.get("getLedgerBalanceV2")
+    assert gateway_tool is not None
+    assert gateway_tool.health == "HEALTHY"
 
 def test_stream_event_sse_format():
     ev = StreamEvent(EventType.PLANNER_STARTED, {"intent": "WALLET"})
@@ -54,7 +69,9 @@ async def test_planner_explainability_output():
     )
     assert "explainability" in res
     exp = res["explainability"]
-    assert exp["intent"] == "Wallet"
+    # Balance questions route to the gateway ledger tool; the pre-existing
+    # getWalletBalance path (/wallet/balance) is not served by the DigiPay gateway.
+    assert exp["intent"] == "LEDGER_BALANCE"
     assert "selectedTools" in exp
     assert "executionTimeMs" in exp
 

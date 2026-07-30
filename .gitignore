@@ -36,3 +36,15 @@ prod_reference_10_1_76_194/
 .env
 .env.local
 .env.prod
+
+# Client RSA keypair used for encrypted gateway responses (X-Frontend-Key).
+# Generated at runtime by ai_platform/gateway/v2/crypto.py — never commit it.
+ai_platform/data/keys/
+*.pem
+
+# Docker Compose variable file (copy of .env.docker.example)
+.env.docker
+
+# Runtime logs
+ai_platform/logs/
+logs/

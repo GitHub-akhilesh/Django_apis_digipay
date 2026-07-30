@@ -11,3 +11,4 @@ This directory contains standard operating procedures (SOPs) and runbooks for de
 - [5. Developer Troubleshooting](file:///d:/Office-Projects/Django_apis_digipay/docs/operations/troubleshooting.md) — Diagnostic steps for SDK init failures, CORS issues, and JWT expiration.
 - [6. On-Call Escalation & SLAs](file:///d:/Office-Projects/Django_apis_digipay/docs/operations/oncall.md) — Severity definitions, response SLAs, and escalation rotas.
 - [7. Backup & Recovery](file:///d:/Office-Projects/Django_apis_digipay/docs/operations/backup.md) — Redis state persistence, memory snapshot backup, and disaster recovery.
+- [8. Environments & Backend Configuration](file:///d:/Office-Projects/Django_apis_digipay/docs/operations/ENVIRONMENTS.md) — Gateway base URLs per environment, the mandatory `/gateway` context path, env-file precedence, and per-service settings.

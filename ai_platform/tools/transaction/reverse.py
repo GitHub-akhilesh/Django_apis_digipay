@@ -7,7 +7,10 @@ transaction_client = TransactionClient()
     name="reverseTransaction",
     description="Processes transaction reversal (restricted to support & admin)",
     roles=["ROLE_SUPPORT", "ROLE_ADMIN"],
-    cacheable=False
+    cacheable=False,
+    read_only=False,
+    requires_confirmation=True,
+    domain="transaction"
 )
 async def reverse_transaction(txn_id: str, jwt_token: str = None):
     res = await transaction_client.reverse(txn_id.strip(), jwt_token)

@@ -3,6 +3,12 @@ import logging
 import asyncio
 from typing import Dict, Any, List
 from langchain_core.runnables import RunnableConfig
+from core.exceptions import (
+    PermissionDeniedException,
+    TenantIsolationException,
+    UpstreamSessionException,
+)
+from messaging.formatter import message_formatter
 from services.tool_executor import tool_executor_service
 
 logger = logging.getLogger("ai_platform.workflow.nodes.execute")
@@ -78,8 +84,55 @@ async def tool_executor_node(state: Dict[str, Any], config: RunnableConfig) -> D
                 "tool": name,
                 "status": "SUCCESS",
                 "result": exec_res["result"],
+                # Pre-rendered chat wording from the message catalogue, carried
+                # so the response node can reply without a model round-trip.
+                "message": exec_res.get("message"),
                 "cacheHit": exec_res["cacheHit"],
                 "latency_ms": exec_res["latency_ms"]
+            }
+        except TenantIsolationException as e:
+            # Not a fault — the caller aimed at someone else's record.
+            logger.warning(f"Tenant isolation blocked step {step['id']}: {e.developer_message}")
+            return {
+                "id": step["id"],
+                "tool": name,
+                "status": "SECURITY_BLOCKED",
+                "error": e.developer_message,
+                "message": (
+                    "I stopped that lookup: it targets a CSC ID other than your own. "
+                    "You can only view data for your own account."
+                ),
+                "cacheHit": False,
+                "latency_ms": 0.0
+            }
+        except UpstreamSessionException as e:
+            # The caller's DigiPay session lapsed. Actionable, not a fault - so
+            # it must not escalate to human support.
+            logger.info(f"Upstream session rejected for step {step['id']}: {e.developer_message}")
+            return {
+                "id": step["id"],
+                "tool": name,
+                "status": "SESSION_EXPIRED",
+                "error": e.developer_message,
+                "message": (
+                    "Your DigiPay session has expired, so I couldn't read that from "
+                    "the DigiPay system. Please sign in again and ask me once more."
+                ),
+                "cacheHit": False,
+                "latency_ms": 0.0
+            }
+        except PermissionDeniedException as e:
+            # Not a fault either — the role simply does not have this tool. Answer
+            # with the tool's own denial wording instead of escalating to support.
+            logger.info(f"Permission denied for step {step['id']} ({name}): {e.developer_message}")
+            return {
+                "id": step["id"],
+                "tool": name,
+                "status": "PERMISSION_DENIED",
+                "error": e.developer_message,
+                "message": message_formatter.denied(name),
+                "cacheHit": False,
+                "latency_ms": 0.0
             }
         except Exception as e:
             logger.error(f"Tool execution failed in step {step['id']}: {e}")
@@ -88,6 +141,7 @@ async def tool_executor_node(state: Dict[str, Any], config: RunnableConfig) -> D
                 "tool": name,
                 "status": "ERROR",
                 "error": str(e),
+                "message": message_formatter.error(name, str(e)),
                 "cacheHit": False,
                 "latency_ms": 0.0
             }
@@ -112,16 +166,31 @@ async def validation_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info("Graph Node: validation_agent (Policy Check)")
     outcomes = state.get("plan_outcomes", [])
     csc_id = state["csc_id"]
-    
+    roles = state.get("user_roles") or []
+
+    # Admin and support roles read other users' records by design; the per-tool
+    # RBAC list already governs which of those tools they can reach.
+    cross_tenant_allowed = any(r in ("ROLE_ADMIN", "ROLE_SUPPORT") for r in roles)
+
     escalate = False
     validated = []
-    
+
     for item in outcomes:
         if item["status"] == "ERROR":
             escalate = True
             validated.append(item)
             continue
-            
+
+        # A denial or an isolation block is a definitive, explainable answer, not a
+        # backend fault — escalating it to human support would be misleading.
+        if item["status"] in ("PERMISSION_DENIED", "SECURITY_BLOCKED", "SESSION_EXPIRED"):
+            validated.append(item)
+            continue
+
+        if cross_tenant_allowed:
+            validated.append(item)
+            continue
+
         res = item.get("result", {})
         owner = None
         if isinstance(res, dict):
@@ -137,7 +206,11 @@ async def validation_agent_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "id": item["id"],
                 "tool": item["tool"],
                 "status": "SECURITY_BLOCKED",
-                "error": "Access Denied: Record owner mismatch."
+                "error": "Access Denied: Record owner mismatch.",
+                "message": (
+                    "I stopped that lookup: the record returned does not belong to your "
+                    "account. You can only view data for your own CSC ID."
+                ),
             })
             escalate = True
             continue

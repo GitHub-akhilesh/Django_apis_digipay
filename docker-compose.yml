@@ -1,0 +1,185 @@
+# =============================================================================
+# DigiPay platform - two separate services, unchanged URLs.
+#
+#   legacy-api    :8000   app/main.py            /api/v1/txn-logs, /passbook, ...
+#   ai-platform   :8001   ai_platform/main.py    /api/v1/chat, /api/v1/governance/...
+#
+# Both keep the paths they already serve, so no frontend needs to change. The AI
+# platform documents the legacy endpoints in its own Swagger UI and calls them
+# over HTTP as a chat tool; it never takes over their routes.
+#
+#   cp .env.docker.example .env.docker
+#   docker compose --env-file .env.docker up --build
+#
+#   http://localhost:8000/docs   legacy API
+#   http://localhost:8001/docs   AI platform + legacy API documented together
+#
+# --env-file is used rather than a plain `.env` because both applications also
+# read a root `.env` through pydantic-settings, so putting Compose's variables
+# there would silently alter a local non-Docker run.
+#
+# Container names are intentionally left to Compose (<project>-<service>-<n>).
+# Fixed `container_name` values collide with any pre-existing container of the
+# same name — including leftovers from a manual `docker run` — and block startup.
+# Use `docker compose logs -f ai-platform` to follow a specific service.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------- legacy API
+  #
+  # Both services run the SAME image and differ only in their command, so the
+  # build is declared here once. Declaring it on both services makes Compose
+  # export the identical tag twice concurrently, which fails with
+  # 'image ... already exists'. Compose builds every `build:` service before
+  # starting any container, so ai-platform below finds the image ready.
+  legacy-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: digipay/platform:1.0.0
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
+    ports:
+      - "8000:8000"
+    environment:
+      ENV: ${ENV:-LOCAL}
+      # Defaults to the bundled SQLite file so the stack comes up without a
+      # database server. Point DATABASE_URL at MySQL for real data.
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////srv/data/digipay.db}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set and shared with ai-platform}
+      ENABLE_INTERNAL_AUTH_BYPASS: "true"
+      # AI_PLATFORM must be listed for the assistant's service-to-service calls.
+      INTERNAL_CLIENTS: ${INTERNAL_CLIENTS:-WALLET_SERVICE,PASSBOOK_SERVICE,LOG_SERVICE,AI_PLATFORM}
+      INTERNAL_BYPASS_SECRET: ${INTERNAL_BYPASS_SECRET:?INTERNAL_BYPASS_SECRET must be set and shared with ai-platform}
+    volumes:
+      - legacy-data:/srv/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+
+  # --------------------------------------------------------------- AI platform
+  ai-platform:
+    # Reuses the image built by legacy-api above - same code, different command.
+    # pull_policy: never stops Compose from trying to fetch this local-only tag
+    # from a registry.
+    image: digipay/platform:1.0.0
+    pull_policy: never
+    command: >
+      uvicorn main:app --app-dir ai_platform --host 0.0.0.0 --port 8001 --proxy-headers
+    ports:
+      - "8001:8001"
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      PORT: "8001"
+      # Must match legacy-api, or tokens issued by one are rejected by the other.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set and shared with legacy-api}
+      INTERNAL_BYPASS_SECRET: ${INTERNAL_BYPASS_SECRET:?INTERNAL_BYPASS_SECRET must be set and shared with legacy-api}
+
+      # Legacy DigiPay API.
+      #
+      # Defaults to the bundled container so the stack is self-contained. That
+      # container runs the same code against an EMPTY SQLite file, so legacy
+      # answers are "no entries" and a Rs 0.00 balance even for accounts with
+      # history — the passbook and txn-log queries need the sharded
+      # digipay_ledger_<n> tables that only exist in MySQL.
+      #
+      # For real legacy data point this at the deployed instance:
+      #   LEGACY_API_URL=http://10.1.76.194
+      # (set in .env.docker). That host is on an internal subnet, so it must be
+      # reachable from wherever this container runs.
+      LEGACY_API_URL: ${LEGACY_API_URL:-http://legacy-api:8000}
+      # Address advertised for the legacy endpoints in the merged Swagger schema.
+      # Must be reachable from the BROWSER, so it cannot be the private container
+      # hostname above, or Swagger "Try it out" fails to resolve the host.
+      LEGACY_API_PUBLIC_URL: ${LEGACY_API_PUBLIC_URL:-http://localhost:8000}
+      AGGREGATE_LEGACY_OPENAPI: "true"
+
+      # DigiPay Spring Boot gateway-service. Same host the React app uses as
+      # VITE_API_BASE_URL. Defaults to UAT so a local stack never points at
+      # production by accident; use https://digipayapi.csccloud.in for production.
+      #
+      # The /gateway context path is appended automatically, so this may be set
+      # with or without it.
+      API_GATEWAY_URL: ${API_GATEWAY_URL:-https://digipayapiuat.csccloud.in}
+      API_GATEWAY_CONTEXT_PATH: ${API_GATEWAY_CONTEXT_PATH:-/gateway}
+      API_GATEWAY_HEALTH_PATH: ${API_GATEWAY_HEALTH_PATH:-/actuator/health}
+
+      REDIS_URL: redis://redis:6379/2
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: ${MONGO_DB:-digipay_ai}
+      RAG_ENABLED: "true"
+      RAG_AUTO_SEED: "true"
+
+      # Empty means the offline keyword simulator handles routing and RAG stays
+      # lexical. Set a real key before serving users.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+
+      # Persisted on the volume below; if it changes between request and
+      # response, the encrypted ledger balance cannot be decrypted.
+      GATEWAY_CLIENT_KEY_PATH: /srv/ai_platform/data/keys/gateway_client_rsa.pem
+    volumes:
+      - ai-keys:/srv/ai_platform/data/keys
+    depends_on:
+      legacy-api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/live"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    restart: unless-stopped
+    extra_hosts:
+      # Only needed if API_GATEWAY_URL is pointed at a gateway-service running
+      # on the host (http://host.docker.internal:8080). The default UAT and
+      # production URLs are public hostnames and do not require this.
+      - "host.docker.internal:host-gateway"
+
+  # ---------------------------------------------------------- infrastructure
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  legacy-data:
+  ai-keys:
+  redis-data:
+  mongo-data:

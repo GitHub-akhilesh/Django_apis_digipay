@@ -1,0 +1,35 @@
+# Keep the build context small and never bake secrets or local state into the image.
+.git
+.gitignore
+venv/
+wheels/
+node_modules/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local environment
+.env
+.env.local
+.env.prod
+*.pem
+ai_platform/data/keys/
+
+# Local state and build output
+logs/
+backups/
+digipay.db
+docs/site/
+prod_reference_10_1_76_194/
+act/
+packages/*/node_modules/
+
+# Tests and tooling are not needed at runtime
+ai_platform/tests/
+tests/
+scripts/
+examples/
+Dockerfile
+docker-compose.yml

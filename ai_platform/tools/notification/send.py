@@ -6,7 +6,10 @@ notification_client = NotificationClient()
 @tool(
     name="sendAlert",
     description="Dispatches push/SMS alert to merchant",
-    roles=["ROLE_SUPPORT", "ROLE_ADMIN"]
+    roles=["ROLE_SUPPORT", "ROLE_ADMIN"],
+    read_only=False,
+    requires_confirmation=True,
+    domain="notification"
 )
 async def send_alert(merchant_id: str, title: str = "Alert", body: str = "Notification", jwt_token: str = None):
     res = await notification_client.send_alert(merchant_id, title, body, jwt_token)
