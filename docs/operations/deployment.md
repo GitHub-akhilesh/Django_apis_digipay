@@ -246,14 +246,59 @@ cd $SVC && setsid nohup ./venv/bin/python -m uvicorn main:app --app-dir ai_platf
   --host 0.0.0.0 --port 8001 --workers 2 > logs/uvicorn-8001.log 2>&1 &
 ```
 
-#### Degraded dependencies are expected here
+#### Redis and MongoDB
 
-Neither Redis nor MongoDB is installed on this host, and there is no LLM key.
-All three degrade by design rather than failing: Redis falls back to an
-in-process session store, Mongo to an in-memory RAG index, and the LLM to
-deterministic keyword routing. The platform reports this at startup. Chat
-answers FAQ/RAG and legacy-backed questions in this mode; set `OPENAI_API_KEY`
-to enable model-driven planning.
+Both are installed on this host, bound to **loopback only** and enabled at boot.
+That binding is deliberate: neither has authentication configured and the host
+sits on a routable corporate LAN, so listening on `0.0.0.0` would publish an
+unauthenticated datastore to the network. The platform is on the same host and
+reaches them at `127.0.0.1`.
+
+Two version constraints, both of which fail in a way that does not point at the
+cause:
+
+- **Redis must be 6.x, not the default 5.** Rocky 8's default module stream is
+  `redis:5`, but `redis-py` 8.x negotiates RESP3 by default and so opens every
+  connection with `HELLO 3`. Redis 5 has no `HELLO` command (added in 6), so the
+  client dies with ``unknown command `HELLO` `` and the platform silently falls
+  back to its in-process session store — Redis is up, reachable, and completely
+  unused. Switch the stream:
+
+  ```bash
+  sudo dnf -y module reset redis && sudo dnf -y module enable redis:6
+  sudo dnf -y distro-sync redis          # 5.0.3 -> 6.2.22
+  ```
+
+  An rpm upgrade leaves `/etc/redis.conf.rpmnew` and may reset `bind`; re-apply
+  `bind 127.0.0.1` and restart.
+
+- **MongoDB must be 4.4 on this host — check AVX first.** mongod 5.0 and later
+  require the CPU AVX instruction set, and this machine does not have it. The
+  7.0 packages install perfectly happily and then refuse to start. Verify before
+  choosing a version:
+
+  ```bash
+  grep -qw avx /proc/cpuinfo && echo "5.0+ ok" || echo "use 4.4"
+  ```
+
+Install both through the proxy (`--setopt=proxy=...`, and a `proxy=` line in the
+MongoDB repo file). After restarting the platform, confirm the fallbacks are
+genuinely gone rather than assuming — the service starts and answers either way:
+
+```bash
+grep -c 'Falling back to local dictionary' logs/uvicorn-8001.log   # expect 0
+grep -c 'unknown command .HELLO'           logs/uvicorn-8001.log   # expect 0
+curl -s localhost:8001/api/v1/governance/rag/status -H "Authorization: Bearer $TOK"
+# expect "mongoReachable": true, with a non-zero document/chunk count
+redis-cli -n 2 dbsize        # non-zero after one chat turn
+```
+
+#### The LLM key is still unset
+
+There is no `OPENAI_API_KEY` on this host, so planning uses deterministic
+keyword routing rather than a model. This degrades by design — chat answers
+FAQ/RAG and legacy-backed questions correctly without it. Set the key in
+`$SVC/.env` and restart to enable model-driven planning.
 
 #### Verification
 
