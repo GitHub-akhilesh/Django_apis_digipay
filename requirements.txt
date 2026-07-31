@@ -12,11 +12,15 @@ async-timeout>=4.0.3
 exceptiongroup>=1.0.2
 tomli>=2.0.0
 
-# Agent workflow graph. Imported at module load by BOTH services —
-# ai_platform/workflow/graph.py and app/services/agent_service.py — so a missing
-# langgraph is a hard startup failure, not a degraded feature. It was previously
-# only present in the local virtualenv, which is why the containers crash-looped
-# with ModuleNotFoundError while local runs worked.
+# Agent workflow graph, used by ai_platform/workflow/graph.py.
+#
+# REQUIRES PYTHON >= 3.10. Every langgraph 1.x release declares it, so on 3.9
+# pip resolves nothing and fails with "No matching distribution found". The
+# legacy API host runs Python 3.9, which is why the AI platform there is built
+# against that host's separate python3.11 — see docs/operations/deployment.md.
+#
+# app/services/agent_service.py also imports it, but guards the import and falls
+# back to an equivalent executor, so the legacy API runs without it.
 langgraph>=1.0.0
 langchain-core>=1.0.0
 

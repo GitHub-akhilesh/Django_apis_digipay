@@ -363,13 +363,38 @@ class BaseLLMProvider(ABC):
     # which let base64 payload data hijack the wrong branch.
     # ------------------------------------------------------------------
 
+    # The planner prompt renders the caller as:
+    #     Context merchantId (csc_id): "523816200013"
+    # so the key is followed by ')' before the colon. An earlier pattern
+    # required ':' or '=' immediately after the key and therefore never
+    # matched, silently falling back to a hard-coded fixture CSC ID. That put
+    # somebody else's merchant id into the tool arguments, and the ownership
+    # check in workflow/nodes/execute.py then refused the result with
+    # "Access Denied: Record owner mismatch" for every caller who was not the
+    # fixture. Allow the optional bracket, and tolerate csc-id / merchant-id.
+    _CSC_ID_RE = re.compile(
+        r'(?:csc[_\- ]?id|merchant[_\- ]?id)\s*\)?\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)'
+    )
+
+    @classmethod
+    def _extract_csc_id(cls, prompt_lower: str) -> str:
+        """
+        CSC ID the prompt is about, or "" when it cannot be determined.
+
+        Returning "" is deliberate. There is no safe default here: inventing a
+        real-looking merchant id makes the simulator request another account's
+        data, which is either a policy breach or a confusing security error.
+        An empty id makes the tool call fail cleanly instead.
+        """
+        match = cls._CSC_ID_RE.search(prompt_lower)
+        return match.group(1) if match else ""
+
     def _simulate_planner(self, prompt_lower: str) -> str:
         user_msg_match = re.search(r'(?:user message|user query)\s*:\s*["\'](.*?)["\']', prompt_lower)
         user_msg = user_msg_match.group(1) if user_msg_match else prompt_lower
         
-        csc_match = re.search(r'(?:csc_id|cscid|merchantid|merchant_id)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)["\']?', prompt_lower)
-        csc_id = csc_match.group(1) if csc_match else "500100100014"
-        
+        csc_id = self._extract_csc_id(prompt_lower)
+
         txn_match = re.search(r'(?:txnid|txn_id)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)["\']?', prompt_lower)
         txn_id = txn_match.group(1).upper() if txn_match else "CZUCW178186672384906DQQOQSU69890796"
 
@@ -464,9 +489,8 @@ class BaseLLMProvider(ABC):
         user_msg_match = re.search(r'(?:user message|user query)\s*:\s*["\'](.*?)["\']', prompt_lower)
         user_msg = user_msg_match.group(1) if user_msg_match else prompt_lower
         
-        csc_match = re.search(r'(?:csc_id|cscid|merchantid|merchant_id)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)["\']?', prompt_lower)
-        csc_id = csc_match.group(1) if csc_match else "500100100014"
-        
+        csc_id = self._extract_csc_id(prompt_lower)
+
         # Extract txnId or ticketId if present
         txn_match = re.search(r'(?:txnid|txn_id|ticketid|ticket_id)\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)["\']?', prompt_lower)
         txn_id = txn_match.group(1).upper() if txn_match else "CZUCW178186672384906DQQOQSU69890796"

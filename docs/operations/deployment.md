@@ -180,6 +180,116 @@ Also confirm the deploy did not move the database target:
 # expect 10.1.74.201 on this server
 ```
 
+### AI platform on the same host (port 8001)
+
+The chat platform runs on `10.1.76.194` too, but is deliberately **not** part of
+the legacy deployment above. It lives in its own tree with its own interpreter,
+so nothing it installs can disturb the running legacy service:
+
+| | Legacy API | AI platform |
+|---|---|---|
+| tree | `/home/akhilesh/digipay_api` | `/home/akhilesh/ai_platform_svc` |
+| python | 3.9.19 | **3.11.9** |
+| venv | `venv/` | its own `venv/` |
+| ports | 80, 8000 | 8001 |
+
+**Python 3.11 is not optional.** `langgraph>=1.0` declares `Requires-Python
+>=3.10`, so on the legacy venv's 3.9 pip resolves nothing at all and fails with
+`No matching distribution found for langgraph>=1.0.0`. The host already has
+`python3.11` alongside 3.9; build the platform venv from that.
+
+The tree contains a copy of `app/` as well, because
+`ai_platform/api/openapi_aggregate.py` imports `app.routers.v1` to fold the
+legacy endpoints into one Swagger page. Those routers are only introspected on a
+throwaway `FastAPI()` to read their schema — they are never mounted and never
+execute here, so this copy needs no database credentials.
+
+Give the tree **exactly one** `.env`. The repository layout has
+`.env.prod`/`.env`/`.env.local` with `.env.local` winning, which is the same
+precedence trap described above. Generate it on the server so `JWT_SECRET` and
+`INTERNAL_BYPASS_SECRET` are copied from the legacy service's `.env` rather than
+retyped — the two must agree or tokens minted by one are rejected by the other.
+
+#### Outbound access needs the proxy
+
+This host has **no direct internet route**. Both PyPI and the DigiPay gateway
+answer only through the corporate proxy:
+
+```
+                          direct      via 10.1.77.179:12531
+pypi.org                    fail              200
+files.pythonhosted.org      fail              200
+digipayapi.csccloud.in      fail              200
+```
+
+`10.1.55.172:12531` and `10.1.77.59:12531` were both unreachable from here; use
+`10.1.77.179:12531`.
+
+Install with `pip --proxy`, and give the running service the proxy through the
+environment — the gateway clients build `httpx.AsyncClient` without
+`trust_env=False`, so httpx picks these up on its own:
+
+```bash
+export HTTPS_PROXY=http://10.1.77.179:12531
+export HTTP_PROXY=http://10.1.77.179:12531
+export NO_PROXY=127.0.0.1,localhost,10.1.76.194,10.1.74.201,10.1.74.180,.csc.gov.local
+```
+
+`NO_PROXY` is load-bearing: the platform calls the legacy API at
+`http://127.0.0.1:8000`, and sending that through the proxy would fail.
+
+```bash
+SVC=/home/akhilesh/ai_platform_svc
+python3.11 -m venv $SVC/venv
+$SVC/venv/bin/python -m pip install --proxy http://10.1.77.179:12531 -r $SVC/requirements.txt
+cd $SVC && setsid nohup ./venv/bin/python -m uvicorn main:app --app-dir ai_platform \
+  --host 0.0.0.0 --port 8001 --workers 2 > logs/uvicorn-8001.log 2>&1 &
+```
+
+#### Degraded dependencies are expected here
+
+Neither Redis nor MongoDB is installed on this host, and there is no LLM key.
+All three degrade by design rather than failing: Redis falls back to an
+in-process session store, Mongo to an in-memory RAG index, and the LLM to
+deterministic keyword routing. The platform reports this at startup. Chat
+answers FAQ/RAG and legacy-backed questions in this mode; set `OPENAI_API_KEY`
+to enable model-driven planning.
+
+#### Verification
+
+```bash
+TOK=$(curl -s -X POST http://127.0.0.1:8000/api/v1/auth/token \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"deploy","cscId":"523816200013"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["access_token"])')
+
+curl -s http://127.0.0.1:8001/health                                   # {"status":"UP"}
+curl -s http://127.0.0.1:8001/api/v1/governance/services -H "Authorization: Bearer $TOK"
+curl -s -X POST http://127.0.0.1:8001/api/v1/chat -H "Authorization: Bearer $TOK" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"what is my legacy wallet balance","sessionId":"deploy"}'
+```
+
+Expected: the chat reply carries **₹191.55** for `523816200013`, the same figure
+`/api/v1/wallet_balance` returns — that is the full path (chat → platform →
+legacy API → MySQL) proven in one call. `/docs` must return 200 and list both
+APIs: 35 paths, of which 9 are the merged legacy ones.
+
+Gateway-backed answers ("what is my wallet balance", without "legacy") will say
+*"Your DigiPay session has expired"* for a locally minted token. That is
+correct: the gateway authenticates from a real `access_token` **cookie** and
+keeps server-side session state, so only a genuine user token reaches it.
+
+Confirm the read-only boundary survived the deploy:
+
+```bash
+curl -s http://127.0.0.1:8001/api/v1/governance/gateway/excluded \
+  -H "Authorization: Bearer $TOK"
+```
+
+Expected `count: 51` — MONEY_MOVEMENT 16, WRITE 16, AUTH 8, CALLBACK 4,
+UNSUPPORTED 4, RECURSION 2, INTERNAL 1 — against 43 allowed (39 gateway + 4
+legacy), all read-only.
+
 ## Deployment Steps
 1. **Tag Version Release**:
    ```bash
