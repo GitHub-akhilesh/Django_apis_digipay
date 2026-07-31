@@ -610,6 +610,21 @@ TOOL_MESSAGES: Dict[str, ToolMessage] = {
             ("Value", "totalAmount"),
         ],
     ),
+    "adminGetServiceStatusSchedules": ToolMessage(
+        label="Scheduled maintenance",
+        working="Checking which services have downtime scheduled…",
+        success="Here are the scheduled service windows.",
+        empty="No maintenance windows are scheduled. Everything is expected to stay up.",
+        error="I couldn't fetch the maintenance schedule right now.",
+        denied=_admin_denied("The maintenance schedule"),
+        row_fields=[
+            ("Service", "service"),
+            ("Status", "status"),
+            ("From", "fromDate"),
+            ("To", "toDate"),
+            ("Reason", "remarks"),
+        ],
+    ),
     "adminGetTimeoutTxnList": ToolMessage(
         label="Timed-out transactions",
         working="Fetching the AePS timed-out transaction list…",

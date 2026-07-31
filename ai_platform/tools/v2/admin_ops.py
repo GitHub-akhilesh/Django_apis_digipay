@@ -298,6 +298,38 @@ async def admin_get_agent_auth_logs(
 
 
 @tool(
+    name="adminGetServiceStatusSchedules",
+    description=(
+        "Planned service up/down windows — which DigiPay services are scheduled "
+        "to be unavailable, and when. Read only; it cannot create or cancel a window."
+    ),
+    roles=ADMIN_ONLY,
+    cacheable=True,
+    ttl=120,
+    domain="admin",
+    source=SOURCE_GATEWAY_V2,
+    endpoint="POST /v2/admin/service-status/schedule/list",
+    examples=["what maintenance is scheduled", "list service status schedules"],
+)
+async def admin_get_service_status_schedules(
+    service: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    rpp: int = 10,
+    cp: int = 1,
+    jwt_token: str = None,
+):
+    return await admin_v2_client.service_status_schedules(
+        jwt_token=jwt_token,
+        service=service,
+        from_date=from_date,
+        to_date=to_date,
+        rpp=rpp,
+        cp=cp,
+    )
+
+
+@tool(
     name="adminGetServiceHistory",
     description="Per-service usage history for a user — which DigiPay services were used and how often.",
     roles=ADMIN_ONLY,

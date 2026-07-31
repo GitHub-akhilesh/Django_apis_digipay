@@ -87,6 +87,14 @@ class AdminV2Client:
     async def timeout_txn_list(self, jwt_token: Optional[str] = None, **filters) -> Any:
         return await self._post_filter("/timeout/list", "adminTimeoutTxnList", build_filter(**filters), jwt_token)
 
+    async def service_status_schedules(self, jwt_token: Optional[str] = None, **filters) -> Any:
+        """Planned service up/down windows. Read only: the schedule and cancel
+        siblings on this controller mutate and are excluded in safety.py."""
+        return await self._post_filter(
+            "/service-status/schedule/list", "adminServiceStatusSchedules",
+            build_filter(**filters), jwt_token
+        )
+
     async def dsp_wallet_transfer_logs(self, jwt_token: Optional[str] = None, **filters) -> Any:
         return await self._post_filter(
             "/dsp-wallet-transfer/logs", "adminDspWalletTransferLogs", build_filter(**filters), jwt_token

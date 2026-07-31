@@ -89,6 +89,11 @@ ALLOWED_ENDPOINTS: List[EndpointSpec] = [
                  "Per-service usage history for a user", ["ROLE_ADMIN"]),
     EndpointSpec("POST", "/v2/admin/timeout/list", "AdminController",
                  "AePS timed-out transaction list", ["ROLE_ADMIN"]),
+    # A read despite being a POST, like most listings on this gateway:
+    # AdminController.listServiceStatusSchedules only forwards a filter. Its two
+    # siblings (schedule, schedule/cancel) mutate and are in EXCLUDED_ENDPOINTS.
+    EndpointSpec("POST", "/v2/admin/service-status/schedule/list", "AdminController",
+                 "Scheduled service up/down windows (planned maintenance)", ["ROLE_ADMIN"]),
     EndpointSpec("POST", "/v2/admin/dsp-wallet-transfer/logs", "AdminController",
                  "DSP wallet transfer logs", ["ROLE_ADMIN"]),
     EndpointSpec("GET", "/v2/admin/dsp-wallet-transfer/{txnId}", "AdminController",
@@ -204,6 +209,10 @@ EXCLUDED_ENDPOINTS: List[Tuple[str, str, str, str]] = [
     ("POST", "/v2/dsptopup/init/dsp-txn-tnf", "MONEY_MOVEMENT", "Initiates DSP daily settlement transfer"),
     ("POST", "/v2/vatm/transactions", "MONEY_MOVEMENT", "VATM withdrawal transaction"),
     ("GET", "/v2/vatm/merchantcreation", "WRITE", "Creates a VATM merchant"),
+    ("POST", "/v2/admin/service-status/schedule", "WRITE",
+     "Schedules a service up/down window — changes what VLEs can transact on"),
+    ("POST", "/v2/admin/service-status/schedule/cancel", "WRITE",
+     "Cancels a scheduled service status window"),
     ("POST", "/v2/matm/transaction/init", "MONEY_MOVEMENT", "MATM transaction initiation"),
     ("POST", "/api/thirdparty/credit/process", "MONEY_MOVEMENT", "Third-party credit processing"),
     ("POST", "/v1/upi/refund", "MONEY_MOVEMENT", "UPI refund"),
