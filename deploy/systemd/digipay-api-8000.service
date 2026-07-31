@@ -1,0 +1,32 @@
+# Legacy DigiPay API, second listener on port 8000.
+#
+# NEVER give this unit port 80. digipay-fastapi.service was a duplicate that
+# also bound :80; the two units fought for the port and the loser crash-looped
+# 123,270 times before it was caught. Exactly one unit may bind :80, and that
+# is digipay-api.service. The StartLimit drop-in makes a unit give up rather
+# than loop forever if it ever cannot bind.
+#
+# Install:
+#   sudo cp digipay-api-8000.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now digipay-api-8000
+[Unit]
+Description=DigiPay legacy API (user-level listener, port 8000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=akhilesh
+Group=akhilesh
+WorkingDirectory=/home/akhilesh/digipay_api
+ExecStart=/home/akhilesh/digipay_api/venv/bin/python -m uvicorn app.main:app \
+  --host 0.0.0.0 --port 8000 --workers 2
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+StandardOutput=append:/home/akhilesh/digipay_api/logs/uvicorn-8000.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

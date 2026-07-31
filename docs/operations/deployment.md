@@ -67,29 +67,45 @@ under systemd, no containers — so deploy it with the procedure in this section
 
 ### Topology as deployed
 
-| Port | Managed by | Runs as | Source |
+| Port | Unit | Runs as | Source |
 |---|---|---|---|
-| 80 | `digipay-api.service` (systemd) | `root` | `/home/akhilesh/digipay_api` |
-| 8000 | detached `uvicorn`, **not** a unit | `akhilesh` | same directory |
+| 80 | `digipay-api.service` | `root` | `/home/akhilesh/digipay_api` |
+| 8000 | `digipay-api-8000.service` | `akhilesh` | same directory |
+| 8001 | `digipay-ai-platform.service` | `akhilesh` | `/home/akhilesh/ai_platform_svc` |
+| 6379 | `redis.service` | `redis` | loopback only |
+| 27017 | `mongod.service` | `mongod` | loopback only |
 
-Both serve the same code from the same tree; only the process manager differs.
-This is what "root level and user level" refers to — one directory, two
-listeners. **Restart both**, or `:8000` silently keeps serving the old build.
+All five are enabled, so the whole stack returns after a reboot. Unit files for
+the two application listeners live in `deploy/systemd/` in this repository —
+install with `cp` to `/etc/systemd/system/`, `daemon-reload`, `enable --now`.
+
+Ports 80 and 8000 serve the same code from the same tree; only the user and
+process manager differ. This is what "root level and user level" refers to —
+one directory, two listeners. **Restart both** after a deploy, or `:8000`
+silently keeps serving the old build.
 
 `nginx` is installed but **inactive**; the application binds `:80` directly.
 `/etc/nginx/conf.d/digipay.conf` proxies to a gunicorn socket for the separate
 Django app under `/root/new_digipay` and is unrelated to this service.
 
-Two standing hazards:
+**Exactly one unit may bind `:80`, and it is `digipay-api.service`.**
+`digipay-fastapi.service` used to be a second unit bound to the same port; the
+two fought for it and the loser crash-looped with `Errno 98 Address already in
+use`, accumulating 123,270 restarts. That unit file has been removed from
+`/etc/systemd/system` (backup: `/home/akhilesh/backups/digipay-fastapi.service.bak`).
 
-- **`digipay-fastapi.service` is a duplicate unit that also binds `:80`.** It is
-  stopped and disabled. If it is ever re-enabled, both units fight for the port
-  and the loser crash-loops (`Errno 98 Address already in use`) — it accumulated
-  123,270 restarts this way. Leave it disabled.
-- **The `:8000` instance is unmanaged.** It does not survive a reboot, and if its
-  master process is killed the worker forks are orphaned and keep the port bound
-  while serving whatever code was current when they started. Converting it to a
-  systemd unit (on `:8000`, never `:80`) would remove this class of problem.
+Note that `systemctl mask` does **not** work as a way to neutralise it — masking
+replaces the unit with a symlink to `/dev/null` and refuses when a real file is
+already there (`Failed to mask unit: File ... already exists`). Removing or
+renaming the file is what actually takes it out of the search path. Verify with:
+
+```bash
+sudo grep -lE 'port 80( |$)' /etc/systemd/system/*.service   # expect only digipay-api.service
+```
+
+Both application units carry `Restart=always` with `StartLimitIntervalSec=60`
+and `StartLimitBurst=5`, so a unit that cannot bind gives up after five attempts
+instead of looping indefinitely.
 
 ### Never ship `app/config.py` to this server
 
@@ -137,11 +153,11 @@ sudo find app -name __pycache__ -type d -exec rm -rf {} +   # sudo: root-owned
 tar -xzf /tmp/app_deploy.tgz -C ~/digipay_api
 sudo chown -R akhilesh:akhilesh app
 ./venv/bin/python -m compileall -q app
-sudo systemctl restart digipay-api.service                  # port 80
-# port 8000 — kill the old listener, then relaunch detached
-setsid nohup ./venv/bin/python -m uvicorn app.main:app \
-  --host 0.0.0.0 --port 8000 --workers 2 > logs/uvicorn-8000.log 2>&1 &
+sudo systemctl restart digipay-api.service digipay-api-8000.service
 ```
+
+Restart **both**: they serve the same tree, so restarting only `:80` leaves
+`:8000` running the previous build in memory.
 
 `__pycache__` is written by the root-owned service, so a plain `rm -rf app` fails
 partway as `akhilesh`. Do not chain the restore as `rm -rf app && tar -xzf ...`:
@@ -238,12 +254,23 @@ export NO_PROXY=127.0.0.1,localhost,10.1.76.194,10.1.74.201,10.1.74.180,.csc.gov
 `NO_PROXY` is load-bearing: the platform calls the legacy API at
 `http://127.0.0.1:8000`, and sending that through the proxy would fail.
 
+The same variables are set in the unit, so they apply to the running service and
+not just to an interactive shell:
+
 ```bash
 SVC=/home/akhilesh/ai_platform_svc
 python3.11 -m venv $SVC/venv
 $SVC/venv/bin/python -m pip install --proxy http://10.1.77.179:12531 -r $SVC/requirements.txt
-cd $SVC && setsid nohup ./venv/bin/python -m uvicorn main:app --app-dir ai_platform \
-  --host 0.0.0.0 --port 8001 --workers 2 > logs/uvicorn-8001.log 2>&1 &
+sudo cp deploy/systemd/digipay-ai-platform.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now digipay-ai-platform
+```
+
+Confirm the proxy actually reached the process, rather than only the shell that
+started it:
+
+```bash
+PID=$(sudo systemctl show digipay-ai-platform -p MainPID --value)
+sudo tr '\0' '\n' < /proc/$PID/environ | grep -iE '^(HTTPS?_PROXY|NO_PROXY)='
 ```
 
 #### Redis and MongoDB

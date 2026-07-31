@@ -1,0 +1,38 @@
+# DigiPay AI chat platform, port 8001.
+#
+# Runs from its own tree with its own python3.11 venv: langgraph 1.x requires
+# Python >= 3.10 and the legacy API's venv is 3.9, so they cannot be shared.
+#
+# The proxy variables are load-bearing. This host has no direct internet route,
+# so the DigiPay gateway is only reachable through the corporate proxy - and
+# NO_PROXY must keep localhost direct, or the platform cannot reach the legacy
+# API on 127.0.0.1:8000. httpx picks these up on its own (the gateway clients
+# do not set trust_env=False).
+#
+# Install:
+#   sudo cp digipay-ai-platform.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now digipay-ai-platform
+[Unit]
+Description=DigiPay AI chat platform (port 8001)
+After=network-online.target redis.service mongod.service
+Wants=network-online.target redis.service mongod.service
+
+[Service]
+Type=simple
+User=akhilesh
+Group=akhilesh
+WorkingDirectory=/home/akhilesh/ai_platform_svc
+Environment="HTTPS_PROXY=http://10.1.77.179:12531"
+Environment="HTTP_PROXY=http://10.1.77.179:12531"
+Environment="NO_PROXY=127.0.0.1,localhost,10.1.76.194,10.1.74.201,10.1.74.180,.csc.gov.local"
+ExecStart=/home/akhilesh/ai_platform_svc/venv/bin/python -m uvicorn main:app \
+  --app-dir ai_platform --host 0.0.0.0 --port 8001 --workers 2
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+StandardOutput=append:/home/akhilesh/ai_platform_svc/logs/uvicorn-8001.log
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target
