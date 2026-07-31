@@ -95,15 +95,15 @@
     }
     .digipay-chat-window.floating {
       position: fixed;
-      bottom: 100px; right: 24px;
-      width: 390px;
+      bottom: 88px; right: 24px;
+      width: 420px;
       /* The panel is anchored to the bottom, so its height plus that 100px
          offset must still fit the viewport. A plain height of 88vh overflows off
          the TOP on any window shorter than ~833px (88vh + 100px > 100vh) and
          takes the header, and the close button, off screen with it. Cap it to
          the space actually available above the launcher. */
-      height: 88vh;
-      max-height: min(780px, calc(100vh - 124px));
+      height: 92vh;
+      max-height: min(860px, calc(100vh - 108px));
       border-radius: var(--dp-r-lg);
       border: 1px solid var(--dp-stroke);
       z-index: 99999;
@@ -230,12 +230,25 @@
     .digipay-close-btn:hover { background: var(--dp-danger); color: #fff; transform: rotate(90deg); }
 
     /* ================================ BODY ============================ */
+    /* The transcript is the point of the panel, so it takes every pixel the
+       fixed rows do not need.
+         flex: 1 1 0    - grow into the leftover, and give none of it back
+         min-height: 0  - without this a flex item will not shrink below its
+                          content, so long replies push the footer and nav out
+                          of the window instead of scrolling
+       The fixed rows below are all flex: 0 0 auto for the same reason: with the
+       default flex-shrink they compete with the transcript for space, which is
+       how the message area ended up as a 40px sliver. */
     .digipay-body {
-      flex: 1; overflow-y: auto; overflow-x: hidden;
-      padding: 16px 14px 8px;
-      display: flex; flex-direction: column; gap: 12px;
+      flex: 1 1 0; min-height: 0;
+      overflow-y: auto; overflow-x: hidden;
+      padding: 14px 14px 6px;
+      display: flex; flex-direction: column; gap: 10px;
       scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.18) transparent;
     }
+    .digipay-quick-chips, .digipay-rewards, .digipay-voice-hint,
+    .digipay-chat-footer, .digipay-shortcuts, .digipay-nav,
+    .digipay-chat-header { flex: 0 0 auto; }
     .digipay-body::-webkit-scrollbar { width: 6px; }
     .digipay-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); border-radius: 999px; }
 
@@ -398,16 +411,23 @@
 
     /* ========================== ACTION CARDS ========================== */
     .digipay-quick-chips {
-      display: flex; gap: 9px;
-      padding: 10px 14px 12px;
+      display: flex; gap: 8px;
+      padding: 8px 14px 8px;
       overflow-x: auto; overflow-y: hidden;
       scrollbar-width: none;
       -webkit-overflow-scrolling: touch;
+      transition: padding .3s var(--dp-ease);
     }
     .digipay-quick-chips::-webkit-scrollbar { display: none; }
+    /* Once a conversation is under way the transcript matters more than the
+       shortcuts, so the cards collapse to a slim strip. They stay present and
+       clickable - nothing is removed, only the second line and some padding. */
+    .dp-compact .digipay-chip { width: 80px; padding: 7px 6px; }
+    .dp-compact .digipay-chip .dp-ic { width: 26px; height: 26px; font-size: 14px; border-radius: 9px; }
+    .dp-compact .digipay-chip .dp-sb { display: none; }
     .digipay-chip {
       position: relative; flex: 0 0 auto;
-      width: 88px; padding: 11px 8px 10px;
+      width: 86px; padding: 9px 8px 8px;
       border-radius: var(--dp-r-sm);
       background: linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.04));
       border: 1px solid var(--dp-stroke);
@@ -424,9 +444,10 @@
     }
     .digipay-chip:active { transform: translateY(-1px) scale(.98); }
     .digipay-chip .dp-ic {
-      width: 34px; height: 34px; border-radius: 11px;
+      width: 30px; height: 30px; border-radius: 10px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 17px;
+      font-size: 15px;
+      transition: all .3s var(--dp-ease);
       background: linear-gradient(135deg, rgba(37,99,235,.35), rgba(124,58,237,.28));
       box-shadow: 0 6px 14px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.10) inset;
     }
@@ -477,18 +498,23 @@
     .digipay-coins b { font-size: 11.5px; color: #FCD34D; }
 
     /* ============================ VOICE BAR =========================== */
-    .digipay-voice-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: 0 14px 8px;
+    /* The language picker used to sit on a row of its own, which cost ~46px of
+       the transcript for a control that is touched once. It now lives in the
+       shortcuts row, and the spoken-status hint takes no height at all until it
+       has something to say. */
+    .digipay-voice-hint:empty { display: none; }
+    .digipay-voice-hint {
+      display: block; padding: 0 16px 5px;
+      font-size: 10.5px; color: var(--dp-muted);
     }
     .digipay-lang-select {
+      flex: 0 0 auto;
       padding: 6px 10px; border-radius: 999px;
       background: var(--dp-glass); color: var(--dp-text);
       border: 1px solid var(--dp-stroke);
       font-size: 11px; cursor: pointer; outline: none;
     }
     .digipay-lang-select option { background: var(--dp-card); color: var(--dp-text); }
-    .digipay-voice-hint { font-size: 10.5px; color: var(--dp-muted); flex: 1; }
 
     /* ============================== FOOTER ============================ */
     .digipay-chat-footer {
@@ -560,7 +586,7 @@
 
     /* ============================ SHORTCUTS =========================== */
     .digipay-shortcuts {
-      display: flex; gap: 7px; padding: 0 14px 10px;
+      display: flex; align-items: center; gap: 7px; padding: 0 14px 8px;
       overflow-x: auto; scrollbar-width: none;
     }
     .digipay-shortcuts::-webkit-scrollbar { display: none; }
@@ -577,9 +603,21 @@
     }
 
     /* ========================== BOTTOM NAV ============================ */
+    /* On a short window the transcript is worth more than the extra rows, so
+       drop them rather than letting the message area collapse again. */
+    @media (max-height: 700px) {
+      /* Drop the shortcut pills, not the whole row - the language picker lives
+         there and is a real control. The robot is inside the scrolling
+         transcript, so it costs no fixed height and stays. */
+      .digipay-sc { display: none; }
+    }
+    @media (max-height: 580px) {
+      .digipay-quick-chips { display: none; }
+    }
+
     .digipay-nav {
       display: flex; align-items: flex-end; justify-content: space-around;
-      padding: 8px 10px 10px;
+      padding: 6px 10px 8px;
       background: rgba(10,15,28,.86);
       backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
       border-top: 1px solid var(--dp-stroke);
@@ -798,13 +836,9 @@
           <div class="digipay-coins"><span class="digipay-coin"></span><b class="dp-coin-n"></b></div>
         </div>
 
-        <!-- Language sits on its own row: five controls in the footer squeezed the
-             text input to almost nothing on a 380px panel. -->
-        <div class="digipay-voice-bar">
-          <select class="digipay-lang-select" title="Voice language" aria-label="Voice language"></select>
-          <span class="digipay-voice-hint"></span>
-          <span class="digipay-wave"><i></i><i></i><i></i><i></i><i></i></span>
-        </div>
+        <!-- Spoken-status line. Collapses to zero height while empty, so it
+             costs the transcript nothing until there is something to report. -->
+        <span class="digipay-voice-hint"></span>
 
         <div class="digipay-chat-footer">
           <button class="digipay-mic-btn" title="Speak your question" aria-label="Speak your question" style="position:relative">
@@ -818,6 +852,8 @@
         </div>
 
         <div class="digipay-shortcuts">
+          <select class="digipay-lang-select" title="Voice language" aria-label="Voice language"></select>
+          <span class="digipay-wave"><i></i><i></i><i></i><i></i><i></i></span>
           <div class="digipay-sc" data-msg="What can you do">❓ FAQs</div>
           <div class="digipay-sc" data-msg="I want to raise a support ticket">🎫 Raise ticket</div>
           <div class="digipay-sc" data-msg="I want to talk to a human agent">🙋 Talk to agent</div>
@@ -1317,6 +1353,10 @@
           rec.addedNodes.forEach((node) => {
             if (!(node instanceof HTMLElement)) return;
             if (!node.classList.contains('digipay-msg-bubble')) return;
+
+            // First real turn: hand the space the big cards were using over to
+            // the transcript. They stay clickable, just slimmer.
+            win.classList.add('dp-compact');
 
             if (node.classList.contains('digipay-typing-bubble')) {
               setMood('thinking');
