@@ -96,7 +96,14 @@
     .digipay-chat-window.floating {
       position: fixed;
       bottom: 100px; right: 24px;
-      width: 390px; height: 88vh; max-height: 780px;
+      width: 390px;
+      /* The panel is anchored to the bottom, so its height plus that 100px
+         offset must still fit the viewport. A plain height of 88vh overflows off
+         the TOP on any window shorter than ~833px (88vh + 100px > 100vh) and
+         takes the header, and the close button, off screen with it. Cap it to
+         the space actually available above the launcher. */
+      height: 88vh;
+      max-height: min(780px, calc(100vh - 124px));
       border-radius: var(--dp-r-lg);
       border: 1px solid var(--dp-stroke);
       z-index: 99999;
@@ -1211,6 +1218,16 @@
           friendly = 'Your DigiPay session seems to have ended. Please sign in again, then ask me once more.';
         } else if (/Failed to fetch|NetworkError|CORS/i.test(detail)) {
           friendly = "I can't connect to DigiPay from here. Please check your connection and try again.";
+        } else if (/NotJson/i.test(detail)) {
+          // Reached the web app but not the assistant service. Distinguished
+          // from a plain outage because the fix is different, and the previous
+          // wording ("couldn't reach DigiPay") sent people looking at the
+          // wrong end of the connection.
+          friendly = "I reached the app but not the DigiPay assistant service. "
+            + "It may still be starting up — please try again shortly.";
+        } else if (/HTTP 50\d|Bad Gateway|Gateway Time/i.test(detail)) {
+          friendly = "The DigiPay assistant service isn't responding right now. "
+            + "Please try again in a moment.";
         }
         appendMessage('assistant', friendly);
         speak(friendly);

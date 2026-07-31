@@ -246,6 +246,20 @@ class DigiPayChatSDK {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
 
+      // A 200 that is not JSON means the request never reached the chat
+      // backend. The usual cause is a missing dev-server proxy for this path:
+      // the SPA fallback answers with index.html, and res.json() then fails
+      // with "Unexpected token '<'", which reads like the backend is down.
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('json')) {
+        const preview = (await res.text()).trim().slice(0, 100);
+        throw new Error(
+          `NotJson: expected JSON from ${this._url(this._modeConfig.chatPath)} but got ` +
+          `"${contentType || 'no content-type'}". The request did not reach the chat ` +
+          `backend - check that this path is proxied to it. Body starts: ${preview}`
+        );
+      }
+
       const body = await res.json();
       // Normalise the two response shapes to one object the UI can rely on.
       const data = this._modeConfig.unwrap(body);
