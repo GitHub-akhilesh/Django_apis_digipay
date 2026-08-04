@@ -1,6 +1,11 @@
 # DigiPay Chat SDK — React + Vite Starter Example
 
-Quickly integrate the `@digipay/chat-react` SDK component into a React + Vite application.
+> **For a working integration, see [`../react/README.md`](../react/README.md).**
+> The `@digipay/chat-react` package below is not published, so `npm install`
+> will fail. The shipped integration copies `sdk/digipay-chat-sdk.js` and
+> `sdk/digipay-chat-widget.js` into `public/js` and proxies the backend — that
+> README covers it, including the CORS and mixed-content reasons for the proxy.
+> This file is kept as the intended package API for when it is published.
 
 ## Quickstart
 

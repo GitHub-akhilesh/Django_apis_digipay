@@ -1,0 +1,37 @@
+# Minimal pubspec for the DigiPay chat example.
+#
+# Copy the deps you need into your own app's pubspec; this file exists so the
+# example is self-describing, not as a package to publish.
+name: digipay_chat_example
+description: DigiPay AI assistant integration for Flutter (native + WebView).
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Native route (digipay_chat_client.dart, digipay_chat_screen.dart).
+  http: ^1.2.0
+
+  # WebView route only (digipay_chat_webview.dart). Drop it if you are not
+  # using that file — it pulls in a platform view on both Android and iOS.
+  webview_flutter: ^4.8.0
+
+  # Optional, both used by the native route:
+  #   flutter_markdown - replies are Markdown, so bold figures and tables
+  #                      render instead of showing their syntax
+  #   speech_to_text   - voice input; the OS engine, which the WebView cannot use
+  #   flutter_tts      - spoken replies
+  # flutter_markdown: ^0.7.0
+  # speech_to_text: ^7.0.0
+  # flutter_tts: ^4.0.0
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

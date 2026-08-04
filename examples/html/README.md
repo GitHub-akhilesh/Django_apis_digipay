@@ -1,5 +1,11 @@
 # DigiPay Chat SDK — Plain HTML / Web Component Starter Example
 
+> The `cdn.digipay.com` URLs below are not live. Serve the two files from your
+> own app, or from the backend, which mounts them at `/sdk`:
+> `<script src="http://<host>/sdk/digipay-chat-sdk.js"></script>`.
+> A page served over https cannot load them over http, so prefer local copies.
+> The `<digipay-chat>` element itself is exactly as documented.
+
 1-line script embed for legacy HTML, PHP, Django, JSP, and Static sites using `<digipay-chat>` Web Component.
 
 ## Quickstart
