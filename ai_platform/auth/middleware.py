@@ -59,7 +59,18 @@ class JWTAuthenticationMiddleware(BaseHTTPMiddleware):
             "/", "/ui", "/health", "/ready", "/metrics", "/live", "/favicon.ico",
             "/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json",
         ]
-        if request.url.path in bypass_paths or request.url.path.startswith("/static"):
+        # /widget/* is the drop-in chat page and the JavaScript it loads. It must
+        # be public: a browser or WebView fetching chat.html sends no
+        # Authorization header, so requiring one 401s the page itself and the
+        # widget never loads. Nothing is exposed by this — these are the same
+        # static assets already served publicly at /sdk on the legacy API, and
+        # the API calls the page then makes are authenticated as normal, with the
+        # user's own token.
+        if (
+            request.url.path in bypass_paths
+            or request.url.path.startswith("/static")
+            or request.url.path.startswith("/widget")
+        ):
             response = await call_next(request)
             return response
 

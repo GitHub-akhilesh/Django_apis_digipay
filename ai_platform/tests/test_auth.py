@@ -72,3 +72,30 @@ def test_jwt_format_validator():
     
     with pytest.raises(AuthenticationException):
         validate_jwt_format("invalidtoken")
+
+
+def test_widget_assets_are_public():
+    """The drop-in chat page must load without an Authorization header.
+
+    A browser or WebView fetching /widget/chat.html cannot send one, so if this
+    401s the page never loads and the widget is unusable. Pinned because the
+    natural instinct when hardening the middleware is to protect everything.
+    """
+    for path in (
+        "/widget/chat.html",
+        "/widget/digipay-chat-sdk.js",
+        "/widget/digipay-chat-widget.js",
+    ):
+        res = client.get(path)
+        assert res.status_code != 401, f"{path} requires auth; the widget cannot load"
+        # 200 when sdk/ is deployed beside ai_platform, 404 in a bare checkout.
+        # Either is fine here; 401 is not.
+        assert res.status_code in (200, 404), f"{path} -> {res.status_code}"
+
+
+def test_api_still_requires_auth_after_widget_bypass():
+    """The /widget bypass must not have widened to the API."""
+    for path in ("/api/v1/chat", "/api/v1/governance/services"):
+        res = client.post(path, json={"sessionId": "1", "message": "hi"}) \
+            if path.endswith("chat") else client.get(path)
+        assert res.status_code == 401, f"{path} should still require a token"
