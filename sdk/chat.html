@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>DigiPay Support AI</title>
+  <!--
+    Drop-in chat page. Host apps embed this URL instead of vendoring the SDK:
+
+      Flutter   WebView  -> http://<host>:8001/widget/chat.html#token=<jwt>
+      React/web iframe   -> same URL
+      anything else       same URL
+
+    Config arrives in the URL FRAGMENT, not the query string, on purpose: a
+    fragment is never sent to the server, so the JWT stays out of access logs,
+    proxy logs and Referer headers. It is also wiped from the address bar below
+    once read, so it does not linger in history.
+
+    Served from the AI platform itself (ai_platform/main.py mounts /widget), so
+    the page and the API share an origin. That matters: :80 and :8001 are
+    DIFFERENT origins even on the same host, and the SDK sends credentials, so
+    serving this page from :80 would need CORS configured. Same-origin needs
+    nothing.
+
+      #token=   DigiPay JWT (required)
+      #csc=     CSC ID, display hint only; real identity comes from the token
+      #name=    greeting name; omitted -> plain "Namaste!"
+      #lang=    voice language, e.g. hi-IN (default en-IN)
+      #mode=    inline (default) | floating
+      #api=     override the platform base URL (default: this origin)
+  -->
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%; width: 100%;
+      background: #060B18; overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+    /* The page IS the panel, so let the widget fill it. */
+    #dp-host, #dp-host > .digipay-chat-wrapper { height: 100%; }
+    #dp-host .digipay-chat-window.inline {
+      height: 100%; border: none; border-radius: 0;
+    }
+    .dp-fatal {
+      color: #FCA5A5; font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="dp-host"></div>
+
+  <!-- Relative, so this page works on whatever host serves it. -->
+  <script src="./digipay-chat-sdk.js"></script>
+  <script src="./digipay-chat-widget.js"></script>
+  <script>
+    (function () {
+      function fail(msg) {
+        document.getElementById('dp-host').innerHTML =
+          '<p class="dp-fatal">' + msg + '</p>';
+      }
+
+      // ----- read config from the fragment (fall back to query) -------------
+      var raw = (location.hash || '').replace(/^#/, '') || (location.search || '').replace(/^\?/, '');
+      var cfg = {};
+      raw.split('&').forEach(function (pair) {
+        if (!pair) return;
+        var i = pair.indexOf('=');
+        var k = i < 0 ? pair : pair.slice(0, i);
+        var v = i < 0 ? '' : pair.slice(i + 1);
+        try { cfg[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' ')); }
+        catch (e) { cfg[k] = v; }
+      });
+
+      // Drop the token from the visible URL once we hold it. Fragments are not
+      // sent to servers, but they do persist in history and in the WebView's
+      // current-URL, which host apps sometimes log.
+      if (location.hash && window.history && history.replaceState) {
+        try { history.replaceState(null, '', location.pathname + location.search); }
+        catch (e) { /* non-fatal */ }
+      }
+
+      if (typeof window.initDigiPayChat !== 'function') {
+        return fail('Could not load the DigiPay chat widget from this host.');
+      }
+      if (!cfg.token) {
+        return fail('No DigiPay session was supplied. Open this page with '
+                  + '#token=&lt;your DigiPay JWT&gt;.');
+      }
+
+      // Default to this page's own origin: same-origin means no CORS and no
+      // mixed-content trouble, whatever host or scheme this is served from.
+      var api = cfg.api || (location.protocol + '//' + location.host);
+
+      window.initDigiPayChat({
+        targetElement: document.getElementById('dp-host'),
+        mode: cfg.mode === 'floating' ? 'floating' : 'inline',
+        apiMode: 'ai-platform',
+        baseUrl: api.replace(/\/+$/, ''),
+        token: cfg.token,
+        cscId: cfg.csc || undefined,
+        userName: cfg.name || undefined,
+        voiceLang: cfg.lang || 'en-IN',
+        theme: 'dark'
+      });
+    })();
+  </script>
+</body>
+</html>

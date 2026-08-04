@@ -1,10 +1,12 @@
 import logging
+import os
 import time
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.logger import configure_logging
@@ -160,6 +162,33 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Trace-ID", "X-Correlation-ID", "X-Request-ID"],
 )
+
+# ---------------------------------------------------------------------------
+# Drop-in widget assets, served from THIS service on purpose.
+#
+# Host apps embed /widget/chat.html rather than vendoring the SDK, so they never
+# copy JavaScript and never fall behind a fix. Serving it here rather than from
+# the legacy API on :80 is what makes it work with no configuration: :80 and
+# :8001 are different origins even on the same host, and the SDK sends
+# credentials, so a page served from :80 would need CORS_ALLOW_ORIGINS set and
+# would be refused outright while the wildcard is in use. Same-origin needs
+# nothing.
+#
+# The directory is the repository's sdk/ (the deploy package ships it beside
+# ai_platform/). Absent in a bare checkout, so the mount is conditional.
+# ---------------------------------------------------------------------------
+_widget_dir = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sdk"
+)
+if os.path.isdir(_widget_dir):
+    app.mount("/widget", StaticFiles(directory=_widget_dir, html=True), name="widget")
+    logger.info(f"Widget assets mounted at /widget from {_widget_dir}")
+else:
+    logger.warning(
+        f"No sdk/ directory at {_widget_dir}; /widget/chat.html will 404. "
+        "Host apps embedding the drop-in page need it deployed."
+    )
+
 
 @app.get("/metrics")
 async def metrics():
